@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>像素冒险 - 2D 横版动作游戏</title>
     <style>
+        :root {
+            --touch-btn-size: 116px;
+            --touch-attack-size: 134px;
+            --touch-gap: 26px;
+            --touch-offset: 40px;
+            --touch-bottom: 36px;
+            --touch-font-size: 28px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -56,31 +65,31 @@
         #touchControls .touch-left,
         #touchControls .touch-right {
             position: absolute;
-            bottom: 36px;
+            bottom: var(--touch-bottom);
             display: flex;
-            gap: 26px;
+            gap: var(--touch-gap);
             pointer-events: auto;
             z-index: 6;
         }
 
         #touchControls .touch-left {
-            left: 40px;
+            left: var(--touch-offset);
         }
 
         #touchControls .touch-right {
-            right: 42px;
+            right: var(--touch-offset);
             flex-direction: row;
-            gap: 30px;
+            gap: calc(var(--touch-gap) + 4px);
         }
 
         .touch-btn {
-            width: 116px;
-            height: 116px;
+            width: var(--touch-btn-size);
+            height: var(--touch-btn-size);
             border-radius: 16px;
             border: 2px solid #fff;
             background: rgba(255,255,255,0.14);
             color: #fff;
-            font-size: 28px;
+            font-size: var(--touch-font-size);
             font-family: 'Courier New', monospace;
             box-shadow: 0 0 16px rgba(0,0,0,0.5);
             backdrop-filter: blur(6px);
@@ -88,9 +97,9 @@
         }
 
         .touch-btn.attack-btn {
-            width: 134px;
-            height: 134px;
-            font-size: 33px;
+            width: var(--touch-attack-size);
+            height: var(--touch-attack-size);
+            font-size: calc(var(--touch-font-size) * 1.18);
         }
 
         .touch-btn:active {
@@ -594,13 +603,72 @@
             };
         }
 
+        const BASE_CANVAS_WIDTH = CONFIG.CANVAS_WIDTH;
+        const BASE_CANVAS_HEIGHT = CONFIG.CANVAS_HEIGHT;
+
+        function updateTouchControlsLayout() {
+            const vw = window.innerWidth || BASE_CANVAS_WIDTH;
+            const vh = window.innerHeight || BASE_CANVAS_HEIGHT;
+            const shortSide = Math.min(vw, vh);
+            const baseSize = Math.max(76, Math.min(132, shortSide * 0.12));
+            const attackSize = Math.max(baseSize * 1.12, baseSize + 12);
+            const gap = Math.max(18, baseSize * 0.25);
+            const offset = Math.max(22, baseSize * 0.34);
+            const bottom = Math.max(20, baseSize * 0.28);
+            const fontSize = Math.max(22, baseSize * 0.24);
+
+            const root = document.documentElement.style;
+            root.setProperty('--touch-btn-size', `${baseSize}px`);
+            root.setProperty('--touch-attack-size', `${attackSize}px`);
+            root.setProperty('--touch-gap', `${gap}px`);
+            root.setProperty('--touch-offset', `${offset}px`);
+            root.setProperty('--touch-bottom', `${bottom}px`);
+            root.setProperty('--touch-font-size', `${fontSize}px`);
+        }
+
+        function updateCanvasScale() {
+            const viewportWidth = window.innerWidth || BASE_CANVAS_WIDTH;
+            const viewportHeight = window.innerHeight || BASE_CANVAS_HEIGHT;
+            const aspect = BASE_CANVAS_WIDTH / BASE_CANVAS_HEIGHT;
+
+            let displayWidth = viewportWidth;
+            let displayHeight = Math.round(displayWidth / aspect);
+            if (displayHeight > viewportHeight) {
+                displayHeight = viewportHeight;
+                displayWidth = Math.round(displayHeight * aspect);
+            }
+
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = `${displayHeight}px`;
+            gameContainer.style.width = `${displayWidth}px`;
+            gameContainer.style.height = `${displayHeight}px`;
+
+            updateTouchControlsLayout();
+        }
+
+        function isFullscreen() {
+            return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+        }
+
+        function requestFullscreenIfPossible() {
+            const el = gameContainer;
+            if (!el || isFullscreen()) return;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+            if (req) {
+                const ret = req.call(el);
+                if (ret && typeof ret.catch === 'function') {
+                    ret.catch(() => {});
+                }
+            }
+        }
+
         function enableTouchMode() {
             touchMode = true;
             gameContainer.classList.add('touch-mode');
             touchControlsEl.style.display = 'block';
             instructionsEl.style.display = 'none';
-            canvas.style.width = '100vw';
-            canvas.style.height = '100vh';
+            requestFullscreenIfPossible();
+            updateCanvasScale();
         }
 
         function disableTouchMode() {
@@ -608,9 +676,11 @@
             gameContainer.classList.remove('touch-mode');
             touchControlsEl.style.display = 'none';
             instructionsEl.style.display = 'block';
-            canvas.style.width = '';
-            canvas.style.height = '';
+            updateCanvasScale();
         }
+
+        window.addEventListener('resize', updateCanvasScale);
+        updateCanvasScale();
 
         // ============ 游戏状态 ============
         const keys = {};
@@ -2476,9 +2546,9 @@
         }
 
         function handleTitleClick(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
+            const pos = getCanvasCoords(e.clientX, e.clientY);
+            const mx = pos.x;
+            const my = pos.y;
             if (isInsideButton(mx, my, TITLE_BUTTONS.start)) {
                 initAudio();
                 disableTouchMode();
@@ -2498,9 +2568,9 @@
         }
 
         function hitRetryButton(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
+            const pos = getCanvasCoords(e.clientX, e.clientY);
+            const mx = pos.x;
+            const my = pos.y;
             const btn = getRetryButtonRect();
             return mx >= btn.x && mx <= btn.x + btn.w && my >= btn.y && my <= btn.y + btn.h;
         }
@@ -2651,13 +2721,17 @@
                 drawWinScreen();
             }
 
-            // 求饶字幕
-            if (keys['KeyU']) {
+            // 求饶字幕贴合玩家位置
+            if (keys['KeyU'] && player) {
+                const screenX = player.x - camera.x + player.width / 2;
+                const screenY = player.y - camera.y - 16;
+                const clampedX = Math.max(40, Math.min(CONFIG.CANVAS_WIDTH - 40, screenX));
+                const clampedY = Math.max(30, screenY);
                 ctx.save();
                 ctx.fillStyle = '#FFD54F';
                 ctx.font = 'bold 22px "Courier New", monospace';
                 ctx.textAlign = 'center';
-                ctx.fillText('腐竹饶命！', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT - 40);
+                ctx.fillText('腐竹饶命！', clampedX, clampedY);
                 ctx.restore();
             }
         }
