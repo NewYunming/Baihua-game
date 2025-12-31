@@ -87,12 +87,12 @@
             height: var(--touch-btn-size);
             border-radius: 16px;
             border: 2px solid #fff;
-            background: rgba(255,255,255,0.14);
+            background: transparent;
             color: #fff;
             font-size: var(--touch-font-size);
             font-family: 'Courier New', monospace;
-            box-shadow: 0 0 16px rgba(0,0,0,0.5);
-            backdrop-filter: blur(6px);
+            box-shadow: none;
+            backdrop-filter: none;
             touch-action: none;
         }
 
@@ -103,7 +103,7 @@
         }
 
         .touch-btn:active {
-            background: rgba(255,255,255,0.2);
+            background: rgba(255,255,255,0.08);
         }
     </style>
 </head>
@@ -2227,8 +2227,10 @@
 
         function drawTitleButton(rect, label) {
             ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.08)';
-            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            if (rect !== TITLE_BUTTONS.touch) {
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            }
             ctx.strokeStyle = '#FFD54F';
             ctx.lineWidth = 3;
             ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
