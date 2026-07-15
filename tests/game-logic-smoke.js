@@ -26,11 +26,21 @@ const ctx = new Proxy({
 });
 
 function makeElement() {
+    const listeners = {};
     return {
         style: {},
         textContent: '',
         classList: { add() {}, remove() {} },
-        addEventListener() {},
+        addEventListener(type, handler) {
+            if (!listeners[type]) listeners[type] = [];
+            listeners[type].push(handler);
+        },
+        dispatchEvent(event) {
+            for (const handler of listeners[event.type] || []) {
+                handler.call(this, event);
+            }
+            return !event.defaultPrevented;
+        },
         setAttribute() {},
         querySelectorAll() { return []; },
         getBoundingClientRect() { return { left: 0, top: 0, width: 960, height: 540 }; },
@@ -510,6 +520,94 @@ const assertions = `
     projectiles.push(new Projectile(1, 1, 1, 0, 1, '#fff', 'enemy'));
     clearCombatTransients(true);
     assert(projectiles.length === 0, '战斗瞬态清理后仍有残留弹幕');
+
+    // 触摸/手写笔要在 pointerup 的用户激活阶段请求全屏；失败不能阻断开局。
+    const previousInitAudio = initAudio;
+    const previousStartMusic = startMusic;
+    initAudio = () => {};
+    startMusic = () => {};
+    const prepareTouchModeClick = () => {
+        gameState = 'title';
+        touchMode = false;
+        document.fullscreenElement = null;
+        document.webkitFullscreenElement = null;
+        document.msFullscreenElement = null;
+        document.webkitIsFullScreen = false;
+    };
+    const makeTitlePointerEvent = (type, pointerType, pointerId = 1) => ({
+        type,
+        button: 0,
+        pointerType,
+        pointerId,
+        clientX: TITLE_BUTTONS.touch.x + TITLE_BUTTONS.touch.w / 2,
+        clientY: TITLE_BUTTONS.touch.y + TITLE_BUTTONS.touch.h / 2,
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; }
+    });
+
+    let standardCalls = 0;
+    let standardReceiver = null;
+    let standardOptions = null;
+    gameContainer.requestFullscreen = function (options) {
+        standardCalls++;
+        standardReceiver = this;
+        standardOptions = options;
+        return Promise.resolve();
+    };
+    delete gameContainer.webkitRequestFullscreen;
+    delete gameContainer.webkitRequestFullScreen;
+    prepareTouchModeClick();
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 11));
+    assert(standardCalls === 0 && gameState === 'title', '触屏在 pointerdown 阶段提前请求全屏或开局');
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 11));
+    assert(standardCalls === 1, '触屏 pointerup 没有调用 requestFullscreen');
+    assert(standardReceiver === gameContainer, 'requestFullscreen 调用对象错误');
+    assert(standardOptions && standardOptions.navigationUI === 'hide', '标准全屏请求没有隐藏浏览器导航界面');
+    assert(gameState === 'playing' && touchMode, '标准全屏申请后没有进入触屏游戏');
+
+    delete gameContainer.requestFullscreen;
+    let webkitCalls = 0;
+    gameContainer.webkitRequestFullscreen = function () {
+        webkitCalls++;
+    };
+    prepareTouchModeClick();
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 12));
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 12));
+    assert(webkitCalls === 1, '缺少标准 API 时没有调用 WebKit 全屏接口');
+    assert(gameState === 'playing' && touchMode, 'WebKit 全屏申请后没有进入触屏游戏');
+
+    delete gameContainer.webkitRequestFullscreen;
+    let rejectionHandled = false;
+    gameContainer.requestFullscreen = () => ({
+        catch(handler) {
+            rejectionHandled = true;
+            handler(new Error('fullscreen denied'));
+        }
+    });
+    prepareTouchModeClick();
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 13));
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 13));
+    assert(rejectionHandled, '没有处理全屏 Promise 拒绝');
+    assert(gameState === 'playing' && touchMode, '全屏 Promise 拒绝阻断了进入触屏游戏');
+
+    gameContainer.requestFullscreen = () => {
+        throw new Error('fullscreen unavailable');
+    };
+    prepareTouchModeClick();
+    let synchronousFailureEscaped = false;
+    try {
+        canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'mouse', 14));
+    } catch (error) {
+        synchronousFailureEscaped = true;
+    }
+    assert(!synchronousFailureEscaped, '同步全屏异常逃逸到点击处理器');
+    assert(gameState === 'playing' && touchMode, '同步全屏异常阻断了进入触屏游戏');
+
+    delete gameContainer.requestFullscreen;
+    delete gameContainer.webkitRequestFullscreen;
+    initAudio = previousInitAudio;
+    startMusic = previousStartMusic;
+    disableTouchMode();
 
     assert(FIXED_STEP_MS === 1000 / 60, '逻辑循环不是固定 60Hz 步长');
     console.log('game logic smoke tests: OK');

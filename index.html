@@ -1175,18 +1175,33 @@
         }
 
         function isFullscreen() {
-            return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+            return document.fullscreenElement
+                || document.webkitFullscreenElement
+                || document.msFullscreenElement
+                || document.webkitIsFullScreen;
         }
 
         function requestFullscreenIfPossible() {
             const el = gameContainer;
-            if (!el || isFullscreen()) return;
-            const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-            if (req) {
-                const ret = req.call(el);
+            if (!el || isFullscreen()) return false;
+            const standardRequest = el.requestFullscreen;
+            const prefixedRequest = el.webkitRequestFullscreen
+                || el.webkitRequestFullScreen
+                || el.msRequestFullscreen;
+            const request = standardRequest || prefixedRequest;
+            if (!request) return false;
+
+            try {
+                const ret = standardRequest
+                    ? standardRequest.call(el, { navigationUI: 'hide' })
+                    : request.call(el);
                 if (ret && typeof ret.catch === 'function') {
                     ret.catch(() => {});
                 }
+                return true;
+            } catch (error) {
+                // 旧版 WebView 可能同步拒绝全屏；触屏模式仍应继续启动。
+                return false;
             }
         }
 
@@ -1211,7 +1226,10 @@
             clearInputState();
             updateCanvasScale();
             if (wasTouchMode && isFullscreen()) {
-                const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+                const exit = document.exitFullscreen
+                    || document.webkitExitFullscreen
+                    || document.webkitCancelFullScreen
+                    || document.msExitFullscreen;
                 if (exit) {
                     const result = exit.call(document);
                     if (result && typeof result.catch === 'function') result.catch(() => {});
@@ -1222,6 +1240,8 @@
         window.addEventListener('resize', updateCanvasScale);
         window.addEventListener('orientationchange', updateCanvasScale);
         if (window.visualViewport) window.visualViewport.addEventListener('resize', updateCanvasScale);
+        document.addEventListener('fullscreenchange', updateCanvasScale);
+        document.addEventListener('webkitfullscreenchange', updateCanvasScale);
         updateCanvasScale();
 
         // ============ 游戏状态 ============
@@ -4118,13 +4138,14 @@
             if (e.button !== 0 && e.pointerType !== 'touch') return;
             e.preventDefault();
             if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
-            initAudio();
             const pos = getCanvasCoords(e.clientX, e.clientY);
             mouseX = pos.x; mouseY = pos.y;
             if (gameState === 'title') {
-                handleTitleClick(e);
+                // 非鼠标指针要等到 pointerup 才获得可用于全屏的瞬时用户激活。
+                if (e.pointerType === 'mouse') handleTitleClick(e);
                 return;
             }
+            initAudio();
             if (gameState === 'reward') {
                 updateHoveredChoice();
                 handleRewardClick();
@@ -4147,7 +4168,12 @@
             mousePressed = false;
         };
 
-        canvas.addEventListener('pointerup', releasePointerAttack);
+        canvas.addEventListener('pointerup', e => {
+            releasePointerAttack();
+            if (gameState === 'title' && e.pointerType !== 'mouse') {
+                handleTitleClick(e);
+            }
+        });
         canvas.addEventListener('pointercancel', releasePointerAttack);
         canvas.addEventListener('lostpointercapture', releasePointerAttack);
         window.addEventListener('pointerup', releasePointerAttack);
