@@ -15,6 +15,13 @@
             --touch-offset: 40px;
             --touch-bottom: 36px;
             --touch-font-size: 28px;
+            --touch-action-width: 320px;
+            --touch-action-height: 240px;
+            --touch-arc-near: 162px;
+            --touch-arc-far: 178px;
+            --touch-arc-top: 108px;
+            --touch-arc-mid: 38px;
+            --touch-icon-scale: 1;
         }
 
         * {
@@ -100,32 +107,41 @@
         #touchControls .touch-right {
             position: absolute;
             bottom: calc(var(--touch-bottom) + env(safe-area-inset-bottom, 0px));
-            display: flex;
-            gap: var(--touch-gap);
-            pointer-events: auto;
             z-index: 6;
         }
 
         #touchControls .touch-left {
             left: calc(var(--touch-offset) + env(safe-area-inset-left, 0px));
+            display: flex;
+            gap: var(--touch-gap);
+            pointer-events: auto;
         }
 
         #touchControls .touch-right {
             right: calc(var(--touch-offset) + env(safe-area-inset-right, 0px));
-            flex-direction: row;
-            gap: calc(var(--touch-gap) + 4px);
+            width: var(--touch-action-width);
+            height: var(--touch-action-height);
+            pointer-events: none;
         }
 
         .touch-btn {
             width: var(--touch-btn-size);
             height: var(--touch-btn-size);
-            border-radius: 16px;
-            border: 2px solid #fff;
-            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            border: 3px solid #DCEBFF;
+            background:
+                linear-gradient(135deg, rgba(112, 155, 205, 0.24) 25%, transparent 25%) 0 0 / 8px 8px,
+                rgba(7, 17, 31, 0.78);
             color: #fff;
             font-size: var(--touch-font-size);
             font-family: 'Courier New', monospace;
-            box-shadow: none;
+            box-shadow:
+                0 0 0 3px rgba(3, 8, 16, 0.82),
+                inset 0 0 0 3px rgba(155, 198, 244, 0.14),
+                4px 5px 0 rgba(0, 0, 0, 0.42);
             backdrop-filter: none;
             touch-action: none;
             user-select: none;
@@ -136,19 +152,250 @@
             -webkit-appearance: none;
         }
 
+        .touch-btn[hidden] {
+            display: none !important;
+        }
+
+        #touchControls .touch-right .touch-btn {
+            position: absolute;
+            pointer-events: auto;
+            border-radius: 50%;
+        }
+
         .touch-btn.attack-btn {
             width: var(--touch-attack-size);
             height: var(--touch-attack-size);
-            font-size: calc(var(--touch-font-size) * 1.18);
+            right: 0;
+            bottom: 0;
+            border-width: 4px;
+            border-color: #FFE082;
+            background:
+                linear-gradient(135deg, rgba(255, 213, 79, 0.25) 25%, transparent 25%) 0 0 / 10px 10px,
+                rgba(38, 22, 11, 0.88);
+            box-shadow:
+                0 0 0 4px rgba(5, 8, 15, 0.9),
+                inset 0 0 0 4px rgba(255, 236, 179, 0.16),
+                5px 7px 0 rgba(0, 0, 0, 0.48);
+        }
+
+        .touch-btn.jump-btn {
+            right: var(--touch-arc-near);
+            bottom: var(--touch-arc-top);
+            border-color: #90CAF9;
+        }
+
+        .touch-btn.heal-btn {
+            right: var(--touch-arc-far);
+            bottom: var(--touch-arc-mid);
+            border-color: #EF9A9A;
         }
 
         .touch-btn:active {
-            background: rgba(255,255,255,0.08);
+            transform: translate(2px, 2px);
+            filter: brightness(1.35);
+            box-shadow:
+                0 0 0 3px rgba(3, 8, 16, 0.82),
+                inset 0 0 0 3px rgba(255, 255, 255, 0.2);
         }
 
         .touch-btn.reload-btn {
+            right: var(--touch-arc-near);
+            bottom: 0;
             border-color: #80CBC4;
             color: #B2DFDB;
+        }
+
+        .pixel-icon {
+            position: relative;
+            display: block;
+            width: 32px;
+            height: 32px;
+            flex: 0 0 32px;
+            transform: scale(var(--touch-icon-scale));
+            transform-origin: center;
+            image-rendering: pixelated;
+        }
+
+        .pixel-arrow::before {
+            content: '';
+            position: absolute;
+            left: 14px;
+            top: 6px;
+            width: 4px;
+            height: 4px;
+            background: #EAF4FF;
+            box-shadow:
+                -4px 4px #EAF4FF, 0 4px #EAF4FF,
+                -8px 8px #EAF4FF, -4px 8px #EAF4FF, 0 8px #EAF4FF, 4px 8px #EAF4FF, 8px 8px #EAF4FF,
+                -4px 12px #EAF4FF, 0 12px #EAF4FF,
+                0 16px #EAF4FF;
+        }
+
+        .pixel-arrow-right {
+            transform: scale(var(--touch-icon-scale)) scaleX(-1);
+        }
+
+        .pixel-boot::before {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 4px;
+            width: 9px;
+            height: 16px;
+            background: #90CAF9;
+            box-shadow: inset -4px 0 #4D86B7;
+        }
+
+        .pixel-boot::after {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 18px;
+            width: 20px;
+            height: 7px;
+            background: #EAF4FF;
+            box-shadow: 0 5px 0 #4D86B7;
+        }
+
+        .pixel-magazine::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 9px;
+            width: 13px;
+            height: 20px;
+            background: #B2DFDB;
+            box-shadow:
+                inset -4px 0 #4F8A83,
+                inset 0 -4px #315C58;
+        }
+
+        .pixel-magazine::after {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 2px;
+            width: 4px;
+            height: 4px;
+            background: #FFF59D;
+            box-shadow:
+                4px 0 #FFF59D, 8px 0 #FFF59D,
+                4px 4px #FFF59D,
+                4px 8px #FFF59D;
+        }
+
+        .pixel-heart::before {
+            content: '';
+            position: absolute;
+            left: 4px;
+            top: 6px;
+            width: 4px;
+            height: 4px;
+            background: #FF8A80;
+            box-shadow:
+                4px 0 #FF8A80, 12px 0 #FF8A80, 16px 0 #FF8A80,
+                0 4px #FF8A80, 4px 4px #FF5252, 8px 4px #FF8A80, 12px 4px #FF8A80, 16px 4px #FF5252, 20px 4px #FF8A80,
+                0 8px #FF8A80, 4px 8px #FF5252, 8px 8px #FF5252, 12px 8px #FF5252, 16px 8px #FF5252, 20px 8px #FF8A80,
+                4px 12px #FF5252, 8px 12px #FF5252, 12px 12px #FF5252, 16px 12px #FF5252,
+                8px 16px #FF5252, 12px 16px #FF5252,
+                12px 20px #C62828;
+        }
+
+        .pixel-sword-shape {
+            position: absolute;
+            left: 7px;
+            top: 1px;
+            width: 18px;
+            height: 30px;
+        }
+
+        .pixel-sword-shape .blade {
+            position: absolute;
+            left: 6px;
+            top: 0;
+            width: 7px;
+            height: 19px;
+            background: #F5FAFF;
+            box-shadow: inset -3px 0 #8FB5DE, 0 -3px 0 -1px #F5FAFF;
+        }
+
+        .pixel-sword-shape .guard {
+            position: absolute;
+            left: 0;
+            top: 18px;
+            width: 19px;
+            height: 5px;
+            background: #FFD54F;
+            box-shadow: inset 0 -2px #B77713;
+        }
+
+        .pixel-sword-shape .grip {
+            position: absolute;
+            left: 7px;
+            top: 23px;
+            width: 5px;
+            height: 8px;
+            background: #A8683A;
+            box-shadow: 0 7px 0 #FFD54F;
+        }
+
+        #touchPauseButton {
+            position: absolute;
+            top: calc(10px + env(safe-area-inset-top, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 13;
+            width: 48px;
+            height: 38px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 3px solid #DCEBFF;
+            border-radius: 6px;
+            background: rgba(7, 17, 31, 0.88);
+            box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(144, 202, 249, 0.18);
+            pointer-events: auto;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        #touchPauseButton .pixel-icon {
+            transform: none;
+        }
+
+        .pixel-pause-icon::before {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 2px;
+            width: 5px;
+            height: 18px;
+            background: #EAF4FF;
+            box-shadow: 10px 0 #EAF4FF;
+        }
+
+        #touchPauseButton.is-paused .pixel-pause-icon::before {
+            left: 7px;
+            top: 4px;
+            width: 5px;
+            height: 5px;
+            box-shadow:
+                0 5px #EAF4FF, 5px 5px #EAF4FF,
+                0 10px #EAF4FF, 5px 10px #EAF4FF, 10px 10px #EAF4FF,
+                0 15px #EAF4FF, 5px 15px #EAF4FF;
+        }
+
+        #touchControls.paused .touch-left,
+        #touchControls.paused .touch-right,
+        #touchControls.paused #fullscreenButton {
+            display: none !important;
+        }
+
+        #touchControls.paused {
+            z-index: 31;
         }
 
         #fullscreenButton {
@@ -170,6 +417,175 @@
             -webkit-user-select: none;
             -webkit-touch-callout: none;
             -webkit-tap-highlight-color: transparent;
+        }
+
+        #pauseMenu {
+            position: absolute;
+            inset: 0;
+            z-index: 30;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(2, 7, 14, 0.78);
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        #pauseMenu[aria-hidden="false"] {
+            display: flex;
+        }
+
+        .pause-panel {
+            width: min(420px, calc(100% - 24px));
+            max-height: calc(100% - 16px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 24px;
+            border: 4px solid #B7D7F5;
+            border-radius: 4px;
+            background:
+                linear-gradient(135deg, rgba(81, 128, 176, 0.14) 25%, transparent 25%) 0 0 / 10px 10px,
+                #091525;
+            box-shadow: 0 0 0 5px #02070E, 10px 12px 0 rgba(0, 0, 0, 0.48);
+            color: #EAF4FF;
+        }
+
+        .pause-panel h2 {
+            margin: 0 0 20px;
+            color: #FFF59D;
+            font-size: 30px;
+            text-align: center;
+            letter-spacing: 0.12em;
+            text-shadow: 3px 3px 0 #533B12;
+        }
+
+        .pause-setting {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px 14px;
+            margin: 16px 0;
+            align-items: center;
+        }
+
+        .pause-setting[hidden] {
+            display: none !important;
+        }
+
+        .pause-setting label {
+            font-weight: bold;
+            color: #C8E6FF;
+        }
+
+        .pause-setting output {
+            min-width: 46px;
+            color: #FFF59D;
+            text-align: right;
+        }
+
+        .pause-setting input[type="range"] {
+            grid-column: 1 / -1;
+            width: 100%;
+            height: 22px;
+            margin: 0;
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            touch-action: pan-x;
+        }
+
+        .pause-setting input[type="range"]::-webkit-slider-runnable-track {
+            height: 10px;
+            border: 2px solid #02070E;
+            background: #29445E;
+            box-shadow: inset 0 0 0 2px #416987;
+        }
+
+        .pause-setting input[type="range"]::-webkit-slider-thumb {
+            width: 22px;
+            height: 22px;
+            margin-top: -8px;
+            border: 3px solid #02070E;
+            border-radius: 2px;
+            background: #FFF59D;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .pause-setting input[type="range"]::-moz-range-track {
+            height: 8px;
+            border: 2px solid #02070E;
+            background: #29445E;
+        }
+
+        .pause-setting input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border: 3px solid #02070E;
+            border-radius: 2px;
+            background: #FFF59D;
+        }
+
+        .pause-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 22px;
+        }
+
+        .pause-menu-btn {
+            min-height: 48px;
+            border: 3px solid #B7D7F5;
+            border-radius: 3px;
+            background: #13283D;
+            color: #FFF;
+            font: bold 16px 'Courier New', monospace;
+            box-shadow: 4px 5px 0 #02070E;
+            cursor: pointer;
+        }
+
+        .pause-menu-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: 2px 3px 0 #02070E;
+        }
+
+        #pauseRestartButton {
+            border-color: #FFAB91;
+            color: #FFCCBC;
+        }
+
+        @media (max-height: 480px) {
+            #pauseMenu {
+                padding: 8px;
+            }
+
+            .pause-panel {
+                padding: 12px 18px;
+            }
+
+            .pause-panel h2 {
+                margin-bottom: 8px;
+                font-size: 22px;
+            }
+
+            .pause-setting {
+                gap: 4px 12px;
+                margin: 7px 0;
+            }
+
+            .pause-setting input[type="range"] {
+                height: 18px;
+            }
+
+            .pause-actions {
+                margin-top: 10px;
+            }
+
+            .pause-menu-btn {
+                min-height: 40px;
+            }
         }
 
         #rotateHint {
@@ -209,18 +625,58 @@
 <body>
     <div id="gameContainer">
         <canvas id="gameCanvas" tabindex="0" role="application" aria-label="白桦大冒险游戏画布"></canvas>
-        <div id="instructions">A/D 移动 · 空格跳跃 · J/左键攻击 · R 装填 · U 求饶回血 · 奖励按 1/2/3，武器页 F 刷新一次 / S 跳过</div>
+        <div id="instructions">A/D 移动 · 空格跳跃 · J/左键攻击 · R 装填 · U 求饶回血 · Esc 暂停 · 奖励按 1/2/3，武器页 F 刷新一次 / S 跳过</div>
         <div id="touchControls" aria-hidden="true">
             <button id="fullscreenButton" type="button" aria-label="进入全屏">⛶ 全屏</button>
+            <button id="touchPauseButton" type="button" aria-label="暂停游戏" aria-pressed="false">
+                <span class="pixel-icon pixel-pause-icon" aria-hidden="true"></span>
+            </button>
             <div class="touch-left">
-                <button type="button" class="touch-btn" data-action="left" aria-label="向左移动">◀</button>
-                <button type="button" class="touch-btn" data-action="right" aria-label="向右移动">▶</button>
+                <button type="button" class="touch-btn" data-action="left" aria-label="向左移动">
+                    <span class="pixel-icon pixel-arrow" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="touch-btn" data-action="right" aria-label="向右移动">
+                    <span class="pixel-icon pixel-arrow pixel-arrow-right" aria-hidden="true"></span>
+                </button>
             </div>
             <div class="touch-right">
-                <button type="button" class="touch-btn" data-action="jump" aria-label="跳跃">跳</button>
-                <button type="button" class="touch-btn reload-btn" data-action="reload" aria-label="手动换弹">弹</button>
-                <button type="button" class="touch-btn attack-btn" data-action="attack" aria-label="攻击">攻</button>
-                <button type="button" class="touch-btn" data-action="heal" aria-label="求饶回血">U</button>
+                <button type="button" class="touch-btn jump-btn" data-action="jump" aria-label="跳跃">
+                    <span class="pixel-icon pixel-boot" aria-hidden="true"></span>
+                </button>
+                <button id="reloadButton" type="button" class="touch-btn reload-btn" data-action="reload" aria-label="手动换弹" aria-hidden="true" hidden disabled>
+                    <span class="pixel-icon pixel-magazine" aria-hidden="true"></span>
+                </button>
+                <button type="button" class="touch-btn attack-btn" data-action="attack" aria-label="攻击">
+                    <span class="pixel-icon pixel-sword" aria-hidden="true">
+                        <span class="pixel-sword-shape">
+                            <span class="blade"></span>
+                            <span class="guard"></span>
+                            <span class="grip"></span>
+                        </span>
+                    </span>
+                </button>
+                <button type="button" class="touch-btn heal-btn" data-action="heal" aria-label="求饶回血">
+                    <span class="pixel-icon pixel-heart" aria-hidden="true"></span>
+                </button>
+            </div>
+        </div>
+        <div id="pauseMenu" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" aria-hidden="true">
+            <div class="pause-panel">
+                <h2 id="pauseTitle">暂停</h2>
+                <div class="pause-setting">
+                    <label for="volumeSlider">音量</label>
+                    <output id="volumeValue" for="volumeSlider">100%</output>
+                    <input id="volumeSlider" type="range" min="0" max="100" value="100" step="1" aria-label="游戏音量">
+                </div>
+                <div id="pauseTouchSizeRow" class="pause-setting" hidden>
+                    <label for="touchSizeSlider">按键大小</label>
+                    <output id="touchSizeValue" for="touchSizeSlider">100%</output>
+                    <input id="touchSizeSlider" type="range" min="75" max="135" value="100" step="1" aria-label="触屏按键大小" disabled>
+                </div>
+                <div class="pause-actions">
+                    <button id="pauseContinueButton" class="pause-menu-btn" type="button">继续游戏</button>
+                    <button id="pauseRestartButton" class="pause-menu-btn" type="button">重新开始</button>
+                </div>
             </div>
         </div>
         <div id="rotateHint" role="status">请将设备旋转至横屏<small>横屏可避免操作区重叠</small></div>
@@ -937,6 +1393,14 @@
         let runStats = createRunStats('story');
         let lastRunSummary = null;
         let touchMode = false;
+        let touchControlScale = 1;
+        let masterVolume = 1;
+        let manualPaused = false;
+        let pagePaused = false;
+        let windowHasFocus = true;
+        let resumeMusicAfterPause = false;
+        let previousFrameTime = performance.now();
+        let logicAccumulator = 0;
         let screenShake = 0;
         let damageFlash = 0;
         let waveCompletionHandled = false;
@@ -1100,17 +1564,25 @@
         let bossMusicGeneration = 0;
         const musicSources = new Set();
         const bossMusicSources = new Set();
+        const BASE_MUSIC_GAIN = 0.12;
+        const BASE_SFX_GAIN = 0.3;
+
+        function applyMasterVolume() {
+            const volume = Math.max(0, Math.min(1, Number(masterVolume) || 0));
+            if (musicGain) musicGain.gain.value = BASE_MUSIC_GAIN * volume;
+            if (sfxGain) sfxGain.gain.value = BASE_SFX_GAIN * volume;
+        }
 
         function initAudio() {
             if (audioCtx) {
+                applyMasterVolume();
                 if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
                 return;
             }
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             musicGain = audioCtx.createGain();
             sfxGain = audioCtx.createGain();
-            musicGain.gain.value = 0.12;
-            sfxGain.gain.value = 0.3;
+            applyMasterVolume();
             musicGain.connect(audioCtx.destination);
             sfxGain.connect(audioCtx.destination);
         }
@@ -1271,6 +1743,16 @@
         const instructionsEl = document.getElementById('instructions');
         const touchControlsEl = document.getElementById('touchControls');
         const fullscreenButtonEl = document.getElementById('fullscreenButton');
+        const touchPauseButtonEl = document.getElementById('touchPauseButton');
+        const reloadButtonEl = document.getElementById('reloadButton');
+        const pauseMenuEl = document.getElementById('pauseMenu');
+        const pauseContinueButtonEl = document.getElementById('pauseContinueButton');
+        const pauseRestartButtonEl = document.getElementById('pauseRestartButton');
+        const volumeSliderEl = document.getElementById('volumeSlider');
+        const volumeValueEl = document.getElementById('volumeValue');
+        const pauseTouchSizeRowEl = document.getElementById('pauseTouchSizeRow');
+        const touchSizeSliderEl = document.getElementById('touchSizeSlider');
+        const touchSizeValueEl = document.getElementById('touchSizeValue');
         const rotateHintEl = document.getElementById('rotateHint');
         const liveStatusEl = document.getElementById('liveStatus');
         const touchButtons = touchControlsEl.querySelectorAll('.touch-btn');
@@ -1293,17 +1775,47 @@
         const BASE_CANVAS_WIDTH = CONFIG.CANVAS_WIDTH;
         const BASE_CANVAS_HEIGHT = CONFIG.CANVAS_HEIGHT;
 
+        function syncTouchWeaponControls(weapon) {
+            if (!reloadButtonEl) return;
+            const showReload = Boolean(weapon?.isRanged);
+            reloadButtonEl.hidden = !showReload;
+            reloadButtonEl.disabled = !showReload;
+            reloadButtonEl.setAttribute('aria-hidden', showReload ? 'false' : 'true');
+            if (!showReload && typeof touchActive !== 'undefined') touchActive.reload = false;
+        }
+
+        function syncPauseInterface() {
+            const showMenu = manualPaused && gameState === 'playing';
+            pauseMenuEl.setAttribute('aria-hidden', showMenu ? 'false' : 'true');
+            touchControlsEl.classList.toggle('paused', pagePaused);
+            touchPauseButtonEl.classList.toggle('is-paused', manualPaused);
+            touchPauseButtonEl.setAttribute('aria-pressed', manualPaused ? 'true' : 'false');
+            touchPauseButtonEl.setAttribute('aria-label', manualPaused ? '继续游戏' : '暂停游戏');
+            pauseTouchSizeRowEl.hidden = !touchMode;
+            touchSizeSliderEl.disabled = !touchMode;
+        }
+
         function updateTouchControlsLayout() {
-            const vw = window.innerWidth || BASE_CANVAS_WIDTH;
-            const vh = window.innerHeight || BASE_CANVAS_HEIGHT;
+            const vw = window.visualViewport?.width || window.innerWidth || BASE_CANVAS_WIDTH;
+            const vh = window.visualViewport?.height || window.innerHeight || BASE_CANVAS_HEIGHT;
             const shortSide = Math.min(vw, vh);
             const compactWidth = Math.min(vw, vh * (BASE_CANVAS_WIDTH / BASE_CANVAS_HEIGHT));
-            const baseSize = Math.max(54, Math.min(118, Math.min(shortSide * 0.12, compactWidth * 0.105)));
-            const attackSize = Math.max(baseSize * 1.12, baseSize + 12);
-            const gap = Math.max(10, baseSize * 0.2);
+            const rawBaseSize = Math.max(54, Math.min(118, Math.min(shortSide * 0.12, compactWidth * 0.105)));
+            const requestedBaseSize = rawBaseSize * touchControlScale;
+            const widthLimitedBaseSize = (vw - 24) / 5.9;
+            const baseSize = Math.max(44, Math.min(150, requestedBaseSize, widthLimitedBaseSize));
+            const attackSize = Math.max(64, Math.min(190, baseSize * 1.48));
+            const gap = Math.max(8, Math.min(28, baseSize * 0.18));
             const offset = Math.max(12, baseSize * 0.22);
             const bottom = Math.max(12, baseSize * 0.2);
             const fontSize = Math.max(18, baseSize * 0.24);
+            const arcNear = attackSize + gap;
+            const arcFar = arcNear + baseSize * 0.55;
+            const arcTop = attackSize * 0.82;
+            const arcMid = Math.max(0, (attackSize - baseSize) / 2);
+            const actionWidth = arcFar + baseSize;
+            const actionHeight = Math.max(attackSize, arcTop + baseSize);
+            const iconScale = baseSize >= 96 ? 2 : 1;
 
             const root = document.documentElement.style;
             root.setProperty('--touch-btn-size', `${baseSize}px`);
@@ -1312,6 +1824,13 @@
             root.setProperty('--touch-offset', `${offset}px`);
             root.setProperty('--touch-bottom', `${bottom}px`);
             root.setProperty('--touch-font-size', `${fontSize}px`);
+            root.setProperty('--touch-action-width', `${actionWidth}px`);
+            root.setProperty('--touch-action-height', `${actionHeight}px`);
+            root.setProperty('--touch-arc-near', `${arcNear}px`);
+            root.setProperty('--touch-arc-far', `${arcFar}px`);
+            root.setProperty('--touch-arc-top', `${arcTop}px`);
+            root.setProperty('--touch-arc-mid', `${arcMid}px`);
+            root.setProperty('--touch-icon-scale', `${iconScale}`);
         }
 
         function updateCanvasScale() {
@@ -1374,6 +1893,7 @@
             const canRequestFullscreen = Boolean(getFullscreenRequest());
             fullscreenButtonEl.style.display = touchMode
                 && gameState === 'playing'
+                && !pagePaused
                 && !isFullscreen()
                 && canRequestFullscreen
                 ? 'block'
@@ -1384,6 +1904,7 @@
             const visible = touchMode && gameState === 'playing';
             touchControlsEl.style.display = visible ? 'block' : 'none';
             touchControlsEl.setAttribute('aria-hidden', visible ? 'false' : 'true');
+            syncPauseInterface();
             syncFullscreenButton();
         }
 
@@ -1998,6 +2519,7 @@
                 this.ammo = this.getMagazineSize();
                 this.reloadTimer = 0;
                 this.reloadMax = 0;
+                syncTouchWeaponControls(this.weapon);
             }
 
             applyEnchant(enchant) {
@@ -3531,6 +4053,7 @@
             player.resetProgression();
             player.hp = player.maxHp;
             gameState = 'playing';
+            resetPauseForStateTransition();
             currentRewardType = 'weapon';
             weaponRewardRefreshAvailable = false;
             weaponChoices = [];
@@ -3603,6 +4126,7 @@
             currentRewardType = 'weapon';
             weaponRewardRefreshAvailable = false;
             player.hp = player.maxHp;
+            resetPauseForStateTransition();
             disableTouchMode();
             announce('标题界面。按 Enter 开始游戏。');
         }
@@ -4412,6 +4936,15 @@
                 return;
             }
 
+            if (gameState === 'playing' && e.code === 'Escape') {
+                if (e.repeat) return;
+                e.preventDefault();
+                toggleManualPause();
+                return;
+            }
+
+            if (pagePaused) return;
+
             if (gameState === 'reward') {
                 if (e.repeat) return;
                 if (/^(Digit|Numpad)[1-3]$/.test(e.code)) {
@@ -4454,6 +4987,7 @@
         touchButtons.forEach(btn => {
             const action = btn.dataset.action;
             const setActive = (state) => {
+                if (state && pagePaused) return;
                 touchActive[action] = state;
                 if (action === 'left') keys['KeyA'] = state;
                 if (action === 'right') keys['KeyD'] = state;
@@ -4496,6 +5030,30 @@
             e.stopPropagation();
             requestFullscreenIfPossible();
         });
+        touchPauseButtonEl.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleManualPause();
+        });
+        pauseContinueButtonEl.addEventListener('click', () => {
+            setManualPaused(false);
+        });
+        pauseRestartButtonEl.addEventListener('click', () => {
+            restartGame();
+            announce('远征已重新开始。');
+        });
+        volumeSliderEl.addEventListener('input', () => {
+            const value = Math.max(0, Math.min(100, Number(volumeSliderEl.value) || 0));
+            masterVolume = value / 100;
+            volumeValueEl.textContent = `${Math.round(value)}%`;
+            applyMasterVolume();
+        });
+        touchSizeSliderEl.addEventListener('input', () => {
+            const value = Math.max(75, Math.min(135, Number(touchSizeSliderEl.value) || 100));
+            touchControlScale = value / 100;
+            touchSizeValueEl.textContent = `${Math.round(value)}%`;
+            updateTouchControlsLayout();
+        });
 
         canvas.addEventListener('pointerdown', e => {
             if (e.button !== 0 && e.pointerType !== 'touch') return;
@@ -4509,6 +5067,7 @@
                 return;
             }
             initAudio();
+            if (pagePaused) return;
             if (gameState === 'reward') {
                 updateHoveredChoice();
                 handleRewardClick();
@@ -4561,6 +5120,7 @@
                 }
 
                 initAudio();
+                if (pagePaused) return;
                 if (gameState === 'reward') {
                     updateHoveredChoice();
                     handleRewardClick();
@@ -4954,11 +5514,6 @@
         }
 
         const FIXED_STEP_MS = 1000 / 60;
-        let previousFrameTime = performance.now();
-        let logicAccumulator = 0;
-        let pagePaused = false;
-        let windowHasFocus = true;
-        let resumeMusicAfterPause = false;
 
         function setPagePaused(paused) {
             if (pagePaused === paused) return;
@@ -4979,18 +5534,50 @@
             resumeMusicAfterPause = false;
         }
 
+        function syncEffectivePause() {
+            setPagePaused(manualPaused || Boolean(document.hidden) || !windowHasFocus);
+            syncTouchControlsVisibility();
+        }
+
+        function setManualPaused(paused) {
+            const next = Boolean(paused);
+            if (next && gameState !== 'playing') return false;
+            if (manualPaused === next) {
+                syncEffectivePause();
+                return false;
+            }
+            manualPaused = next;
+            syncEffectivePause();
+            announce(next ? '游戏已暂停。' : '继续游戏。');
+            return true;
+        }
+
+        function toggleManualPause() {
+            return setManualPaused(!manualPaused);
+        }
+
+        function resetPauseForStateTransition() {
+            manualPaused = false;
+            resumeMusicAfterPause = false;
+            setPagePaused(Boolean(document.hidden) || !windowHasFocus);
+            clearInputState();
+            previousFrameTime = performance.now();
+            logicAccumulator = 0;
+            syncTouchControlsVisibility();
+        }
+
         function drawPauseOverlay() {
-            if (!pagePaused || gameState !== 'playing') return;
+            if (!pagePaused || manualPaused || gameState !== 'playing') return;
             ctx.save();
             ctx.fillStyle = 'rgba(2, 7, 14, 0.66)';
             ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
             ctx.fillStyle = '#FFF';
             ctx.font = 'bold 34px "Courier New", monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('已暂停', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2);
+            ctx.fillText('窗口失焦，游戏已暂停', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2);
             ctx.font = '15px "Courier New", monospace';
             ctx.fillStyle = '#B3E5FC';
-            ctx.fillText('返回窗口继续远征', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 34);
+            ctx.fillText('返回窗口后自动继续', CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2 + 34);
             ctx.restore();
         }
 
@@ -5020,14 +5607,14 @@
         // 窗口失焦时重置按键状态
         window.addEventListener('blur', () => {
             windowHasFocus = false;
-            setPagePaused(true);
+            syncEffectivePause();
         });
         window.addEventListener('focus', () => {
             windowHasFocus = true;
-            setPagePaused(Boolean(document.hidden));
+            syncEffectivePause();
         });
         document.addEventListener('visibilitychange', () => {
-            setPagePaused(Boolean(document.hidden) || !windowHasFocus);
+            syncEffectivePause();
         });
     </script>
 </body>

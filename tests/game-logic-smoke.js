@@ -32,11 +32,20 @@ function makeElement() {
     return {
         style: {},
         textContent: '',
+        value: '',
+        hidden: false,
+        disabled: false,
         dataset: {},
         classList: {
             add(...names) { names.forEach(name => classes.add(name)); },
             remove(...names) { names.forEach(name => classes.delete(name)); },
-            contains(name) { return classes.has(name); }
+            contains(name) { return classes.has(name); },
+            toggle(name, force) {
+                const shouldAdd = force === undefined ? !classes.has(name) : Boolean(force);
+                if (shouldAdd) classes.add(name);
+                else classes.delete(name);
+                return shouldAdd;
+            }
         },
         addEventListener(type, handler) {
             if (!listeners[type]) listeners[type] = [];
@@ -83,14 +92,37 @@ const touchControls = makeElement();
 touchButtonMocks.forEach(button => { button.parentElement = touchControls; });
 touchControls.querySelectorAll = selector => selector === '.touch-btn' ? touchButtonMocks : [];
 const documentElement = makeElement();
-documentElement.style.setProperty = () => {};
+const cssVariables = {};
+documentElement.style.setProperty = (name, value) => { cssVariables[name] = String(value); };
+documentElement.style.getPropertyValue = name => cssVariables[name] || '';
 const documentEvents = makeElement();
+const windowEvents = makeElement();
+const touchPauseButton = makeElement();
+touchPauseButton.parentElement = touchControls;
+const volumeSlider = makeElement();
+volumeSlider.value = '100';
+const touchSizeSlider = makeElement();
+touchSizeSlider.value = '100';
+touchSizeSlider.disabled = true;
+const pauseTouchSizeRow = makeElement();
+pauseTouchSizeRow.hidden = true;
+const reloadButton = touchButtonMocks.find(button => button.dataset.action === 'reload');
 const elements = {
     gameCanvas: canvas,
     gameContainer: makeElement(),
     instructions: makeElement(),
     touchControls,
     fullscreenButton: makeElement(),
+    touchPauseButton,
+    reloadButton,
+    pauseMenu: makeElement(),
+    pauseContinueButton: makeElement(),
+    pauseRestartButton: makeElement(),
+    volumeSlider,
+    volumeValue: makeElement(),
+    pauseTouchSizeRow,
+    touchSizeSlider,
+    touchSizeValue: makeElement(),
     rotateHint: makeElement(),
     liveStatus: makeElement()
 };
@@ -108,10 +140,11 @@ const documentMock = {
 const windowMock = {
     innerWidth: 1280,
     innerHeight: 720,
-    addEventListener() {},
+    addEventListener: windowEvents.addEventListener,
+    dispatchEvent: windowEvents.dispatchEvent,
     matchMedia() { return { matches: false }; },
     setTimeout(callback) { callback(); return 0; },
-    visualViewport: { addEventListener() {} }
+    visualViewport: { width: 1280, height: 720, addEventListener() {} }
 };
 
 const assertions = `
@@ -612,6 +645,10 @@ const assertions = `
     // 触屏全屏、禁止长按、换弹键与状态可见性。
     assert(/data-action="reload"[^>]*aria-label="手动换弹"/.test(sourceHtml), '触屏区缺少明确的换弹按钮');
     assert(sourceHtml.includes('-webkit-touch-callout: none') && sourceHtml.includes('user-select: none'), '触屏按钮缺少长按选择保护');
+    assert(/id="touchPauseButton"[^>]*aria-label="暂停游戏"/.test(sourceHtml), '触屏区缺少顶部暂停键');
+    assert(/id="pauseMenu"[^>]*role="dialog"/.test(sourceHtml), '缺少可访问的暂停菜单');
+    assert(sourceHtml.includes('pixel-sword-shape') && sourceHtml.includes('pixel-boot') && sourceHtml.includes('pixel-heart'), '触屏操作没有使用像素图标');
+    assert(sourceHtml.includes('.touch-btn.attack-btn') && sourceHtml.includes('--touch-arc-near'), '右侧操作键没有采用攻击键为核心的弧形布局');
     const boundTouchButtons = touchControlsEl.querySelectorAll('.touch-btn');
     assert(boundTouchButtons.length === 6, '触屏按钮数量或事件绑定对象不完整');
     assert(
@@ -624,6 +661,120 @@ const assertions = `
     const gestureOrder = [];
     initAudio = () => { gestureOrder.push('audio'); };
     startMusic = () => {};
+
+    const dispatchKey = (code, repeat = false) => {
+        const event = {
+            type: 'keydown',
+            code,
+            repeat,
+            defaultPrevented: false,
+            preventDefault() { this.defaultPrevented = true; },
+            stopPropagation() {}
+        };
+        window.dispatchEvent(event);
+        return event;
+    };
+
+    restartGame();
+    disableTouchMode();
+    const pauseKey = dispatchKey('Escape');
+    assert(pauseKey.defaultPrevented && manualPaused && pagePaused, 'Esc 没有暂停战斗');
+    assert(pauseMenuEl.getAttribute('aria-hidden') === 'false', 'Esc 暂停后菜单没有显示');
+    assert(pauseTouchSizeRowEl.hidden && touchSizeSliderEl.disabled, '电脑模式错误显示触屏按键大小设置');
+    const pausedActiveTime = runStats.activePlayMs;
+    gameLoop(previousFrameTime + FIXED_STEP_MS * 3);
+    assert(runStats.activePlayMs === pausedActiveTime, '暂停时逻辑循环仍累计有效战斗时间');
+    const pausedAttackButton = boundTouchButtons.find(button => button.dataset.action === 'attack');
+    pausedAttackButton.dispatchEvent({
+        type: 'pointerdown',
+        pointerId: 17,
+        preventDefault() {},
+        stopPropagation() {}
+    });
+    assert(!mousePressed && !touchActive.attack, '暂停时触屏攻击键仍写入输入状态');
+    dispatchKey('Escape', true);
+    assert(manualPaused, '长按 Esc 的重复 keydown 意外恢复了游戏');
+    dispatchKey('KeyJ');
+    assert(!keys.KeyJ, '暂停时仍接收战斗按键');
+    window.dispatchEvent({ type: 'blur' });
+    window.dispatchEvent({ type: 'focus' });
+    assert(manualPaused && pagePaused, '窗口失焦再聚焦后手动暂停被意外解除');
+    dispatchKey('Escape');
+    assert(!manualPaused && !pagePaused && pauseMenuEl.getAttribute('aria-hidden') === 'true', 'Esc 没有恢复游戏并关闭菜单');
+    window.dispatchEvent({ type: 'blur' });
+    assert(pagePaused && !manualPaused, '窗口失焦没有自动暂停');
+    window.dispatchEvent({ type: 'focus' });
+    assert(!pagePaused, '窗口重新聚焦后没有恢复自动暂停');
+
+    enableTouchMode(false);
+    assert(!pauseTouchSizeRowEl.hidden && !touchSizeSliderEl.disabled, '触屏暂停菜单没有启用按键大小设置');
+    const touchPauseEvent = {
+        type: 'click',
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() {}
+    };
+    touchPauseButtonEl.dispatchEvent(touchPauseEvent);
+    assert(touchPauseEvent.defaultPrevented && manualPaused && touchControlsEl.classList.contains('paused'), '顶部触屏暂停键没有暂停游戏');
+    touchPauseButtonEl.dispatchEvent({
+        type: 'click',
+        preventDefault() {},
+        stopPropagation() {}
+    });
+    assert(!manualPaused && !pagePaused && pauseMenuEl.getAttribute('aria-hidden') === 'true', '顶部触屏暂停键无法再次点击恢复游戏');
+    touchPauseButtonEl.dispatchEvent({
+        type: 'click',
+        preventDefault() {},
+        stopPropagation() {}
+    });
+    pauseContinueButtonEl.dispatchEvent({ type: 'click' });
+    assert(!manualPaused && pauseMenuEl.getAttribute('aria-hidden') === 'true', '继续游戏按钮没有关闭暂停菜单');
+
+    currentWave = 7;
+    gameMode = 'endless';
+    killCount = 19;
+    touchPauseButtonEl.dispatchEvent({
+        type: 'click',
+        preventDefault() {},
+        stopPropagation() {}
+    });
+    pauseRestartButtonEl.dispatchEvent({ type: 'click' });
+    assert(gameState === 'playing' && gameMode === 'story' && currentWave === 1 && killCount === 0, '暂停菜单的重新开始没有重置主线');
+    assert(!manualPaused && !pagePaused && pauseMenuEl.getAttribute('aria-hidden') === 'true', '重新开始后暂停状态没有清理');
+
+    musicGain = { gain: { value: 0 } };
+    sfxGain = { gain: { value: 0 } };
+    volumeSliderEl.value = '0';
+    volumeSliderEl.dispatchEvent({ type: 'input' });
+    assert(musicGain.gain.value === 0 && sfxGain.gain.value === 0 && volumeValueEl.textContent === '0%', '音量滑条无法完全静音');
+    volumeSliderEl.value = '40';
+    volumeSliderEl.dispatchEvent({ type: 'input' });
+    assert(Math.abs(musicGain.gain.value - 0.048) < 1e-9 && Math.abs(sfxGain.gain.value - 0.12) < 1e-9, '音量滑条没有同步调节音乐与音效');
+    assert(volumeValueEl.textContent === '40%', '音量滑条数值没有更新');
+
+    touchSizeSliderEl.value = '75';
+    touchSizeSliderEl.dispatchEvent({ type: 'input' });
+    const smallTouchButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
+    touchSizeSliderEl.value = '135';
+    touchSizeSliderEl.dispatchEvent({ type: 'input' });
+    const largeTouchButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
+    assert(largeTouchButton > smallTouchButton, '触屏按键大小滑条没有改变实际布局');
+    assert(touchSizeValueEl.textContent === '135%', '触屏按键大小数值没有更新');
+    updateTouchControlsLayout();
+    assert(parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size')) === largeTouchButton, '重新计算布局后触屏按键缩放倍率丢失');
+    window.visualViewport.width = 360;
+    window.visualViewport.height = 240;
+    updateTouchControlsLayout();
+    const narrowButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
+    const narrowGap = parseFloat(document.documentElement.style.getPropertyValue('--touch-gap'));
+    const narrowOffset = parseFloat(document.documentElement.style.getPropertyValue('--touch-offset'));
+    const narrowActionWidth = parseFloat(document.documentElement.style.getPropertyValue('--touch-action-width'));
+    assert(2 * narrowButton + narrowGap + narrowActionWidth + 2 * narrowOffset <= 360, '窄横屏最大按键尺寸导致左右操作区重叠');
+    assert(['1', '2'].includes(document.documentElement.style.getPropertyValue('--touch-icon-scale')), '像素图标使用了会产生亚像素模糊的连续缩放');
+    window.visualViewport.width = 1280;
+    window.visualViewport.height = 720;
+    updateTouchControlsLayout();
+
     const prepareTouchModeClick = () => {
         gestureOrder.length = 0;
         gameState = 'title';
@@ -734,7 +885,7 @@ const assertions = `
     delete document.documentElement.requestFullscreen;
 
     for (const eventType of ['contextmenu', 'selectstart', 'dragstart']) {
-        for (const button of boundTouchButtons) {
+        for (const button of [...boundTouchButtons, touchPauseButtonEl]) {
             const event = {
                 type: eventType,
                 defaultPrevented: false,
@@ -742,7 +893,7 @@ const assertions = `
                 stopPropagation() {}
             };
             button.dispatchEvent(event);
-            assert(event.defaultPrevented, button.dataset.action + ' 的 ' + eventType + ' 没有冒泡到触屏层并被阻止');
+            assert(event.defaultPrevented, (button.dataset.action || 'pause') + ' 的 ' + eventType + ' 没有冒泡到触屏层并被阻止');
         }
     }
 
@@ -750,7 +901,10 @@ const assertions = `
     gameState = 'playing';
     touchMode = true;
     syncTouchControlsVisibility();
+    player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
+    assert(reloadButtonEl.hidden && reloadButtonEl.disabled && reloadButtonEl.getAttribute('aria-hidden') === 'true', '近战武器仍显示触屏换弹键');
     player.setWeapon(gun);
+    assert(!reloadButtonEl.hidden && !reloadButtonEl.disabled && reloadButtonEl.getAttribute('aria-hidden') === 'false', '远程武器没有即时显示触屏换弹键');
     player.ammo = Math.max(0, player.getMagazineSize() - 1);
     player.reloadTimer = 0;
     const reloadPointer = {
