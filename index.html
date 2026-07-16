@@ -12,6 +12,7 @@
             --touch-btn-size: 116px;
             --touch-attack-size: 134px;
             --touch-gap: 26px;
+            --touch-move-gap: 24px;
             --touch-offset: 40px;
             --touch-bottom: 36px;
             --touch-font-size: 28px;
@@ -21,6 +22,8 @@
             --touch-arc-far: 178px;
             --touch-arc-top: 108px;
             --touch-arc-mid: 38px;
+            --touch-reload-right: 78px;
+            --touch-reload-bottom: 126px;
             --touch-icon-scale: 1;
         }
 
@@ -113,7 +116,7 @@
         #touchControls .touch-left {
             left: calc(var(--touch-offset) + env(safe-area-inset-left, 0px));
             display: flex;
-            gap: var(--touch-gap);
+            gap: var(--touch-move-gap);
             pointer-events: auto;
         }
 
@@ -199,8 +202,8 @@
         }
 
         .touch-btn.reload-btn {
-            right: var(--touch-arc-near);
-            bottom: 0;
+            right: var(--touch-reload-right);
+            bottom: var(--touch-reload-bottom);
             border-color: #80CBC4;
             color: #B2DFDB;
         }
@@ -1795,41 +1798,122 @@
             touchSizeSliderEl.disabled = !touchMode;
         }
 
+        const TOUCH_MOVE_GAP = 24;
+        const TOUCH_CLUSTER_GAP = 12;
+        const TOUCH_EDGE_GAP = 4;
+
+        function calculateTouchControlMetrics(baseSize) {
+            const attackSize = Math.max(64, Math.min(190, baseSize * 1.48));
+            const gap = Math.max(8, Math.min(28, baseSize * 0.18));
+            const offset = Math.max(12, baseSize * 0.22);
+            const bottom = Math.max(12, baseSize * 0.2);
+            const arcNear = attackSize + gap;
+            const arcFar = arcNear + baseSize * 0.55;
+            const arcTop = attackSize * 0.82;
+            const arcMid = Math.max(0, (attackSize - baseSize) / 2);
+
+            // 换弹键取攻击键与跳跃键安全圆的右上交点，使其落在标注空位且不随缩放重叠。
+            const clearance = Math.max(4, baseSize * 0.05);
+            const attackCenterX = attackSize / 2;
+            const attackCenterY = attackSize / 2;
+            const jumpCenterX = arcNear + baseSize / 2;
+            const jumpCenterY = arcTop + baseSize / 2;
+            const jumpDeltaX = jumpCenterX - attackCenterX;
+            const jumpDeltaY = jumpCenterY - attackCenterY;
+            const centerDistance = Math.max(0.001, Math.hypot(jumpDeltaX, jumpDeltaY));
+            const attackRadius = (attackSize + baseSize) / 2 + clearance;
+            const jumpRadius = baseSize + clearance;
+            const along = (
+                attackRadius * attackRadius
+                - jumpRadius * jumpRadius
+                + centerDistance * centerDistance
+            ) / (2 * centerDistance);
+            const perpendicular = Math.sqrt(Math.max(0, attackRadius * attackRadius - along * along));
+            const unitX = jumpDeltaX / centerDistance;
+            const unitY = jumpDeltaY / centerDistance;
+            const reloadCenterX = attackCenterX + along * unitX - perpendicular * unitY;
+            const reloadCenterY = attackCenterY + along * unitY + perpendicular * unitX;
+            const reloadRight = reloadCenterX - baseSize / 2;
+            const reloadBottom = reloadCenterY - baseSize / 2;
+
+            const actionWidth = Math.max(
+                attackSize,
+                arcNear + baseSize,
+                arcFar + baseSize,
+                reloadRight + baseSize
+            );
+            const actionHeight = Math.max(
+                attackSize,
+                arcTop + baseSize,
+                arcMid + baseSize,
+                reloadBottom + baseSize
+            );
+
+            return {
+                attackSize,
+                gap,
+                offset,
+                bottom,
+                arcNear,
+                arcFar,
+                arcTop,
+                arcMid,
+                reloadRight,
+                reloadBottom,
+                actionWidth,
+                actionHeight,
+                totalWidth: baseSize * 2 + TOUCH_MOVE_GAP + actionWidth + offset * 2 + TOUCH_CLUSTER_GAP,
+                totalHeight: actionHeight + bottom + TOUCH_EDGE_GAP
+            };
+        }
+
         function updateTouchControlsLayout() {
             const vw = window.visualViewport?.width || window.innerWidth || BASE_CANVAS_WIDTH;
             const vh = window.visualViewport?.height || window.innerHeight || BASE_CANVAS_HEIGHT;
             const shortSide = Math.min(vw, vh);
             const compactWidth = Math.min(vw, vh * (BASE_CANVAS_WIDTH / BASE_CANVAS_HEIGHT));
             const rawBaseSize = Math.max(54, Math.min(118, Math.min(shortSide * 0.12, compactWidth * 0.105)));
-            const requestedBaseSize = rawBaseSize * touchControlScale;
-            const widthLimitedBaseSize = (vw - 24) / 5.9;
-            const baseSize = Math.max(44, Math.min(150, requestedBaseSize, widthLimitedBaseSize));
-            const attackSize = Math.max(64, Math.min(190, baseSize * 1.48));
-            const gap = Math.max(8, Math.min(28, baseSize * 0.18));
-            const offset = Math.max(12, baseSize * 0.22);
-            const bottom = Math.max(12, baseSize * 0.2);
-            const fontSize = Math.max(18, baseSize * 0.24);
-            const arcNear = attackSize + gap;
-            const arcFar = arcNear + baseSize * 0.55;
-            const arcTop = attackSize * 0.82;
-            const arcMid = Math.max(0, (attackSize - baseSize) / 2);
-            const actionWidth = arcFar + baseSize;
-            const actionHeight = Math.max(attackSize, arcTop + baseSize);
-            const iconScale = baseSize >= 96 ? 2 : 1;
+            const requestedBaseSize = Math.max(44, Math.min(150, rawBaseSize * touchControlScale));
+            const fitsViewport = metrics => metrics.totalWidth <= vw && metrics.totalHeight <= vh;
+            let baseSize = requestedBaseSize;
+            let metrics = calculateTouchControlMetrics(baseSize);
 
+            if (!fitsViewport(metrics)) {
+                const minimumMetrics = calculateTouchControlMetrics(44);
+                if (fitsViewport(minimumMetrics)) {
+                    let low = 44;
+                    let high = baseSize;
+                    for (let index = 0; index < 14; index++) {
+                        const middle = (low + high) / 2;
+                        if (fitsViewport(calculateTouchControlMetrics(middle))) low = middle;
+                        else high = middle;
+                    }
+                    baseSize = low;
+                    metrics = calculateTouchControlMetrics(baseSize);
+                } else {
+                    baseSize = 44;
+                    metrics = minimumMetrics;
+                }
+            }
+
+            const fontSize = Math.max(18, baseSize * 0.24);
+            const iconScale = baseSize >= 96 ? 2 : 1;
             const root = document.documentElement.style;
             root.setProperty('--touch-btn-size', `${baseSize}px`);
-            root.setProperty('--touch-attack-size', `${attackSize}px`);
-            root.setProperty('--touch-gap', `${gap}px`);
-            root.setProperty('--touch-offset', `${offset}px`);
-            root.setProperty('--touch-bottom', `${bottom}px`);
+            root.setProperty('--touch-attack-size', `${metrics.attackSize}px`);
+            root.setProperty('--touch-gap', `${metrics.gap}px`);
+            root.setProperty('--touch-move-gap', `${TOUCH_MOVE_GAP}px`);
+            root.setProperty('--touch-offset', `${metrics.offset}px`);
+            root.setProperty('--touch-bottom', `${metrics.bottom}px`);
             root.setProperty('--touch-font-size', `${fontSize}px`);
-            root.setProperty('--touch-action-width', `${actionWidth}px`);
-            root.setProperty('--touch-action-height', `${actionHeight}px`);
-            root.setProperty('--touch-arc-near', `${arcNear}px`);
-            root.setProperty('--touch-arc-far', `${arcFar}px`);
-            root.setProperty('--touch-arc-top', `${arcTop}px`);
-            root.setProperty('--touch-arc-mid', `${arcMid}px`);
+            root.setProperty('--touch-action-width', `${metrics.actionWidth}px`);
+            root.setProperty('--touch-action-height', `${metrics.actionHeight}px`);
+            root.setProperty('--touch-arc-near', `${metrics.arcNear}px`);
+            root.setProperty('--touch-arc-far', `${metrics.arcFar}px`);
+            root.setProperty('--touch-arc-top', `${metrics.arcTop}px`);
+            root.setProperty('--touch-arc-mid', `${metrics.arcMid}px`);
+            root.setProperty('--touch-reload-right', `${metrics.reloadRight}px`);
+            root.setProperty('--touch-reload-bottom', `${metrics.reloadBottom}px`);
             root.setProperty('--touch-icon-scale', `${iconScale}`);
         }
 

@@ -649,6 +649,8 @@ const assertions = `
     assert(/id="pauseMenu"[^>]*role="dialog"/.test(sourceHtml), '缺少可访问的暂停菜单');
     assert(sourceHtml.includes('pixel-sword-shape') && sourceHtml.includes('pixel-boot') && sourceHtml.includes('pixel-heart'), '触屏操作没有使用像素图标');
     assert(sourceHtml.includes('.touch-btn.attack-btn') && sourceHtml.includes('--touch-arc-near'), '右侧操作键没有采用攻击键为核心的弧形布局');
+    assert(sourceHtml.includes('gap: var(--touch-move-gap)') && sourceHtml.includes('const TOUCH_MOVE_GAP = 24'), '左右方向键没有使用更大的固定间隙');
+    assert(sourceHtml.includes('right: var(--touch-reload-right)') && sourceHtml.includes('bottom: var(--touch-reload-bottom)'), '换弹键没有使用独立轮盘坐标');
     const boundTouchButtons = touchControlsEl.querySelectorAll('.touch-btn');
     assert(boundTouchButtons.length === 6, '触屏按钮数量或事件绑定对象不完整');
     assert(
@@ -755,24 +757,66 @@ const assertions = `
     touchSizeSliderEl.value = '75';
     touchSizeSliderEl.dispatchEvent({ type: 'input' });
     const smallTouchButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
+    const smallMoveGap = parseFloat(document.documentElement.style.getPropertyValue('--touch-move-gap'));
     touchSizeSliderEl.value = '135';
     touchSizeSliderEl.dispatchEvent({ type: 'input' });
     const largeTouchButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
+    const largeMoveGap = parseFloat(document.documentElement.style.getPropertyValue('--touch-move-gap'));
     assert(largeTouchButton > smallTouchButton, '触屏按键大小滑条没有改变实际布局');
+    assert(smallMoveGap === 24 && largeMoveGap === 24, '左右方向键间隙随按键缩放发生变化');
     assert(touchSizeValueEl.textContent === '135%', '触屏按键大小数值没有更新');
     updateTouchControlsLayout();
     assert(parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size')) === largeTouchButton, '重新计算布局后触屏按键缩放倍率丢失');
-    window.visualViewport.width = 360;
-    window.visualViewport.height = 240;
-    updateTouchControlsLayout();
-    const narrowButton = parseFloat(document.documentElement.style.getPropertyValue('--touch-btn-size'));
-    const narrowGap = parseFloat(document.documentElement.style.getPropertyValue('--touch-gap'));
-    const narrowOffset = parseFloat(document.documentElement.style.getPropertyValue('--touch-offset'));
-    const narrowActionWidth = parseFloat(document.documentElement.style.getPropertyValue('--touch-action-width'));
-    assert(2 * narrowButton + narrowGap + narrowActionWidth + 2 * narrowOffset <= 360, '窄横屏最大按键尺寸导致左右操作区重叠');
-    assert(['1', '2'].includes(document.documentElement.style.getPropertyValue('--touch-icon-scale')), '像素图标使用了会产生亚像素模糊的连续缩放');
+
+    const cssNumber = name => parseFloat(document.documentElement.style.getPropertyValue(name));
+    const centerDistance = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
+    const assertTouchWheelGeometry = (label, viewportWidth, viewportHeight) => {
+        const buttonSize = cssNumber('--touch-btn-size');
+        const attackSize = cssNumber('--touch-attack-size');
+        const moveGap = cssNumber('--touch-move-gap');
+        const offset = cssNumber('--touch-offset');
+        const bottom = cssNumber('--touch-bottom');
+        const actionWidth = cssNumber('--touch-action-width');
+        const actionHeight = cssNumber('--touch-action-height');
+        const jumpRight = cssNumber('--touch-arc-near');
+        const jumpBottom = cssNumber('--touch-arc-top');
+        const healRight = cssNumber('--touch-arc-far');
+        const healBottom = cssNumber('--touch-arc-mid');
+        const reloadRight = cssNumber('--touch-reload-right');
+        const reloadBottom = cssNumber('--touch-reload-bottom');
+        const attackCenter = { x: attackSize / 2, y: attackSize / 2 };
+        const jumpCenter = { x: jumpRight + buttonSize / 2, y: jumpBottom + buttonSize / 2 };
+        const healCenter = { x: healRight + buttonSize / 2, y: healBottom + buttonSize / 2 };
+        const reloadCenter = { x: reloadRight + buttonSize / 2, y: reloadBottom + buttonSize / 2 };
+        const clearance = Math.max(4, buttonSize * 0.05);
+
+        assert(moveGap === 24, label + ' 的方向键固定间隙不是 24px');
+        assert(reloadCenter.x > attackCenter.x && reloadCenter.x < jumpCenter.x, label + ' 的换弹键没有位于攻击与跳跃之间');
+        assert(reloadCenter.y > attackCenter.y, label + ' 的换弹键没有移动到攻击键上方');
+        assert(centerDistance(reloadCenter, attackCenter) >= (buttonSize + attackSize) / 2 + clearance - 0.5, label + ' 的换弹键与攻击键重叠');
+        assert(centerDistance(reloadCenter, jumpCenter) >= buttonSize + clearance - 0.5, label + ' 的换弹键与跳跃键重叠');
+        assert(centerDistance(reloadCenter, healCenter) >= buttonSize + clearance - 0.5, label + ' 的换弹键与回血键重叠');
+        assert(actionWidth + 0.5 >= Math.max(attackSize, jumpRight + buttonSize, healRight + buttonSize, reloadRight + buttonSize), label + ' 的轮盘宽度没有包住全部按钮');
+        assert(actionHeight + 0.5 >= Math.max(attackSize, jumpBottom + buttonSize, healBottom + buttonSize, reloadBottom + buttonSize), label + ' 的轮盘高度没有包住全部按钮');
+        assert(buttonSize * 2 + moveGap + actionWidth + offset * 2 + TOUCH_CLUSTER_GAP <= viewportWidth + 0.5, label + ' 的左右操作区发生横向重叠');
+        assert(actionHeight + bottom + TOUCH_EDGE_GAP <= viewportHeight + 0.5, label + ' 的轮盘超出短屏顶部');
+        assert(['1', '2'].includes(document.documentElement.style.getPropertyValue('--touch-icon-scale')), label + ' 的像素图标使用了连续缩放');
+    };
+
+    for (const [viewportWidth, viewportHeight] of [[1280, 720], [1280, 186], [360, 240]]) {
+        for (const scalePercent of [75, 100, 135]) {
+            window.visualViewport.width = viewportWidth;
+            window.visualViewport.height = viewportHeight;
+            touchControlScale = scalePercent / 100;
+            updateTouchControlsLayout();
+            assertTouchWheelGeometry(viewportWidth + 'x' + viewportHeight + ' @ ' + scalePercent + '%', viewportWidth, viewportHeight);
+        }
+    }
+
     window.visualViewport.width = 1280;
     window.visualViewport.height = 720;
+    touchControlScale = 1;
+    touchSizeSliderEl.value = '100';
     updateTouchControlsLayout();
 
     const prepareTouchModeClick = () => {
