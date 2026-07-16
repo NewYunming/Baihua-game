@@ -27,21 +27,41 @@ const ctx = new Proxy({
 
 function makeElement() {
     const listeners = {};
+    const classes = new Set();
+    const attributes = {};
     return {
         style: {},
         textContent: '',
-        classList: { add() {}, remove() {} },
+        dataset: {},
+        classList: {
+            add(...names) { names.forEach(name => classes.add(name)); },
+            remove(...names) { names.forEach(name => classes.delete(name)); },
+            contains(name) { return classes.has(name); }
+        },
         addEventListener(type, handler) {
             if (!listeners[type]) listeners[type] = [];
             listeners[type].push(handler);
         },
         dispatchEvent(event) {
+            if (!event.target) event.target = this;
+            if (!event.__stopWrapped) {
+                const originalStop = event.stopPropagation;
+                event.stopPropagation = function () {
+                    this.cancelBubble = true;
+                    if (originalStop) originalStop.call(this);
+                };
+                event.__stopWrapped = true;
+            }
             for (const handler of listeners[event.type] || []) {
                 handler.call(this, event);
             }
+            if (!event.cancelBubble && this.parentElement) {
+                this.parentElement.dispatchEvent(event);
+            }
             return !event.defaultPrevented;
         },
-        setAttribute() {},
+        setAttribute(name, value) { attributes[name] = String(value); },
+        getAttribute(name) { return attributes[name]; },
         querySelectorAll() { return []; },
         getBoundingClientRect() { return { left: 0, top: 0, width: 960, height: 540 }; },
         setPointerCapture() {}
@@ -50,11 +70,27 @@ function makeElement() {
 
 const canvas = makeElement();
 canvas.getContext = () => ctx;
+const touchButtonTags = [...html.matchAll(/<button\b[^>]*>/g)]
+    .map(match => match[0])
+    .filter(tag => /\bclass="[^"]*\btouch-btn\b[^"]*"/.test(tag));
+const touchActionsFromHtml = touchButtonTags.map(tag => tag.match(/\bdata-action="([^"]+)"/)?.[1]);
+const touchButtonMocks = touchActionsFromHtml.map(action => {
+    const button = makeElement();
+    button.dataset.action = action;
+    return button;
+});
+const touchControls = makeElement();
+touchButtonMocks.forEach(button => { button.parentElement = touchControls; });
+touchControls.querySelectorAll = selector => selector === '.touch-btn' ? touchButtonMocks : [];
+const documentElement = makeElement();
+documentElement.style.setProperty = () => {};
+const documentEvents = makeElement();
 const elements = {
     gameCanvas: canvas,
     gameContainer: makeElement(),
     instructions: makeElement(),
-    touchControls: makeElement(),
+    touchControls,
+    fullscreenButton: makeElement(),
     rotateHint: makeElement(),
     liveStatus: makeElement()
 };
@@ -62,9 +98,11 @@ const elements = {
 const documentMock = {
     hidden: false,
     fullscreenElement: null,
-    documentElement: { style: { setProperty() {} } },
+    fullscreenEnabled: true,
+    documentElement,
     getElementById(id) { return elements[id]; },
-    addEventListener() {}
+    addEventListener: documentEvents.addEventListener,
+    dispatchEvent: documentEvents.dispatchEvent
 };
 
 const windowMock = {
@@ -327,6 +365,56 @@ const assertions = `
     assert(enemies.filter(enemy => ['warden', 'prism'].includes(enemy.type)).every(enemy => enemy.isEliteType), '特殊敌人未标记为精英');
     assert(!['warden', 'prism'].includes(chooseEnemyType(5, { warden: 1, prism: 1 })), '达到单波上限后仍能抽到受限精英');
 
+    // 混沌怪物只在无尽模式出现；同一种子稳定，不同种子产生有边界的外观和属性。
+    const enemyTypesBeforeChaos = JSON.stringify(ENEMY_TYPES);
+    const chaosA = createChaosProfile(21, 0x12345678);
+    const chaosB = createChaosProfile(21, 0x12345678);
+    assert(JSON.stringify(chaosA) === JSON.stringify(chaosB), '同一种子没有生成稳定的混沌怪物');
+    const chaosSignatures = new Set();
+    for (let seed = 1; seed <= 96; seed++) {
+        const profile = createChaosProfile(31, seed);
+        chaosSignatures.add([
+            profile.baseType, profile.traitId, profile.mutationId, profile.color,
+            profile.shape, profile.pattern, profile.eyeCount, profile.hornCount,
+            profile.baseHp, profile.baseDmg, profile.speed
+        ].join('|'));
+        assert(Number.isFinite(profile.baseHp) && profile.baseHp >= 18 && profile.baseHp <= 190, '混沌怪物生命值越界');
+        assert(Number.isFinite(profile.baseDmg) && profile.baseDmg >= 5 && profile.baseDmg <= 26, '混沌怪物攻击力越界');
+        assert(Number.isFinite(profile.speed) && profile.speed >= 0.55 && profile.speed <= 3.2, '混沌怪物速度越界');
+        assert(Number.isFinite(profile.knockResist) && profile.knockResist >= 0.55 && profile.knockResist <= 2.15, '混沌怪物抗击退越界');
+        assert(profile.width >= 18 && profile.width <= 44 && profile.height >= 23 && profile.height <= 52, '混沌怪物体型越界');
+        assert(profile.eyeCount >= 1 && profile.eyeCount <= 3 && profile.hornCount >= 0 && profile.hornCount <= 2, '混沌怪物外观参数越界');
+        assert(!(profile.ranged && profile.leaper), '混沌怪物同时获得远程和跃袭行为');
+    }
+    assert(chaosSignatures.size >= 80, '混沌怪物随机组合的多样性不足');
+    assert(JSON.stringify(ENEMY_TYPES) === enemyTypesBeforeChaos, '生成混沌怪物时污染了基础敌人配置');
+
+    const chaosEnemy = new Enemy(250, 120, 21, 'chaos', chaosA);
+    const chaosSnapshot = JSON.stringify(chaosEnemy.chaosProfile);
+    assert(chaosEnemy.isChaos && !chaosEnemy.isEliteType && !chaosEnemy.empowered, '混沌怪物被错误归类为固定精英或强化怪');
+    chaosEnemy.draw(ctx);
+    chaosEnemy.draw(ctx);
+    assert(JSON.stringify(chaosEnemy.chaosProfile) === chaosSnapshot, '绘制过程改变了混沌怪物的随机外观');
+
+    gameMode = 'story';
+    assert(!shouldSpawnChaosEnemy(21, 0, () => 0), '主线模式错误生成混沌怪物');
+    gameMode = 'endless';
+    assert(!shouldSpawnChaosEnemy(20, 0, () => 0), '无尽 Boss 波错误生成混沌怪物');
+    assert(shouldSpawnChaosEnemy(21, 0, () => 0), '无尽普通波无法生成混沌怪物');
+    assert(!shouldSpawnChaosEnemy(21, getChaosSpawnCap(21), () => 0), '混沌怪物超过单波数量上限');
+
+    Math.random = () => 0;
+    currentWave = CHAOS_SPAWN_RULES.startWave;
+    const expectedEndlessEnemyCount = Math.min(
+        CONFIG.MAX_ENEMIES_PER_WAVE,
+        CONFIG.BASE_ENEMIES_PER_WAVE + Math.floor((currentWave - 1) * 1.35)
+    );
+    spawnEnemiesForWave();
+    Math.random = originalRandomForSpawns;
+    assert(enemies.filter(enemy => enemy.isChaos).length === getChaosSpawnCap(currentWave), '无尽波次没有按上限替换生成混沌怪物');
+    assert(enemies.length === expectedEndlessEnemyCount && totalEnemiesInWave === expectedEndlessEnemyCount, '混沌怪物作为额外敌人改变了本波总量');
+    gameMode = 'story';
+
     // 玩家投射物必须实际接入普通敌人的全局命中分支。
     player.setWeapon(gun);
     player.x = 40;
@@ -521,12 +609,23 @@ const assertions = `
     clearCombatTransients(true);
     assert(projectiles.length === 0, '战斗瞬态清理后仍有残留弹幕');
 
-    // 触摸/手写笔要在 pointerup 的用户激活阶段请求全屏；失败不能阻断开局。
+    // 触屏全屏、禁止长按、换弹键与状态可见性。
+    assert(/data-action="reload"[^>]*aria-label="手动换弹"/.test(sourceHtml), '触屏区缺少明确的换弹按钮');
+    assert(sourceHtml.includes('-webkit-touch-callout: none') && sourceHtml.includes('user-select: none'), '触屏按钮缺少长按选择保护');
+    const boundTouchButtons = touchControlsEl.querySelectorAll('.touch-btn');
+    assert(boundTouchButtons.length === 6, '触屏按钮数量或事件绑定对象不完整');
+    assert(
+        boundTouchButtons.map(button => button.dataset.action).sort().join(',') === ['left', 'right', 'jump', 'reload', 'attack', 'heal'].sort().join(','),
+        '实际 HTML 的触屏 action 集合不完整'
+    );
+
     const previousInitAudio = initAudio;
     const previousStartMusic = startMusic;
-    initAudio = () => {};
+    const gestureOrder = [];
+    initAudio = () => { gestureOrder.push('audio'); };
     startMusic = () => {};
     const prepareTouchModeClick = () => {
+        gestureOrder.length = 0;
         gameState = 'title';
         touchMode = false;
         document.fullscreenElement = null;
@@ -542,33 +641,40 @@ const assertions = `
         clientX: TITLE_BUTTONS.touch.x + TITLE_BUTTONS.touch.w / 2,
         clientY: TITLE_BUTTONS.touch.y + TITLE_BUTTONS.touch.h / 2,
         defaultPrevented: false,
-        preventDefault() { this.defaultPrevented = true; }
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() {}
     });
 
     let standardCalls = 0;
     let standardReceiver = null;
     let standardOptions = null;
-    gameContainer.requestFullscreen = function (options) {
+    document.documentElement.requestFullscreen = function (options) {
+        gestureOrder.push('fullscreen');
         standardCalls++;
         standardReceiver = this;
         standardOptions = options;
+        document.fullscreenElement = this;
+        document.dispatchEvent({ type: 'fullscreenchange' });
         return Promise.resolve();
     };
-    delete gameContainer.webkitRequestFullscreen;
-    delete gameContainer.webkitRequestFullScreen;
     prepareTouchModeClick();
     canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 11));
     assert(standardCalls === 0 && gameState === 'title', '触屏在 pointerdown 阶段提前请求全屏或开局');
     canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 11));
     assert(standardCalls === 1, '触屏 pointerup 没有调用 requestFullscreen');
-    assert(standardReceiver === gameContainer, 'requestFullscreen 调用对象错误');
+    assert(gestureOrder[0] === 'fullscreen' && gestureOrder[1] === 'audio', '全屏请求不是手势链中的首个受限调用');
+    assert(standardReceiver === document.documentElement, '网页全屏没有优先使用根元素');
     assert(standardOptions && standardOptions.navigationUI === 'hide', '标准全屏请求没有隐藏浏览器导航界面');
+    assert(document.fullscreenElement === document.documentElement, '全屏成功后 fullscreenElement 未更新');
+    assert(fullscreenButtonEl.style.display === 'none', '已经全屏仍显示全屏重试按钮');
     assert(gameState === 'playing' && touchMode, '标准全屏申请后没有进入触屏游戏');
 
-    delete gameContainer.requestFullscreen;
+    delete document.documentElement.requestFullscreen;
     let webkitCalls = 0;
     gameContainer.webkitRequestFullscreen = function () {
+        gestureOrder.push('fullscreen');
         webkitCalls++;
+        document.webkitFullscreenElement = this;
     };
     prepareTouchModeClick();
     canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 12));
@@ -578,7 +684,7 @@ const assertions = `
 
     delete gameContainer.webkitRequestFullscreen;
     let rejectionHandled = false;
-    gameContainer.requestFullscreen = () => ({
+    document.documentElement.requestFullscreen = () => ({
         catch(handler) {
             rejectionHandled = true;
             handler(new Error('fullscreen denied'));
@@ -588,9 +694,10 @@ const assertions = `
     canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 13));
     canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 13));
     assert(rejectionHandled, '没有处理全屏 Promise 拒绝');
+    assert(fullscreenButtonEl.style.display === 'block', '全屏被拒绝后没有提供重试按钮');
     assert(gameState === 'playing' && touchMode, '全屏 Promise 拒绝阻断了进入触屏游戏');
 
-    gameContainer.requestFullscreen = () => {
+    document.documentElement.requestFullscreen = () => {
         throw new Error('fullscreen unavailable');
     };
     prepareTouchModeClick();
@@ -603,7 +710,97 @@ const assertions = `
     assert(!synchronousFailureEscaped, '同步全屏异常逃逸到点击处理器');
     assert(gameState === 'playing' && touchMode, '同步全屏异常阻断了进入触屏游戏');
 
-    delete gameContainer.requestFullscreen;
+    delete document.documentElement.requestFullscreen;
+    prepareTouchModeClick();
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 15));
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 15));
+    assert(gameState === 'playing' && touchMode, '无全屏 API 时没有进入沉浸触屏模式');
+    assert(fullscreenButtonEl.style.display === 'none', '不支持全屏的浏览器仍显示无效全屏按钮');
+    assert(gameContainer.style.width === '1280px' && gameContainer.style.height === '720px', '沉浸触屏容器没有铺满动态视口');
+
+    let policyBlockedCalls = 0;
+    document.fullscreenEnabled = false;
+    document.documentElement.requestFullscreen = () => {
+        policyBlockedCalls++;
+        return Promise.reject(new Error('fullscreen policy blocked'));
+    };
+    prepareTouchModeClick();
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerdown', 'touch', 16));
+    canvas.dispatchEvent(makeTitlePointerEvent('pointerup', 'touch', 16));
+    assert(policyBlockedCalls === 0, '全屏策略已禁止时仍发起请求');
+    assert(gameState === 'playing' && touchMode, '全屏策略禁止时没有进入沉浸触屏模式');
+    assert(fullscreenButtonEl.style.display === 'none', '全屏策略禁止时仍显示无效重试按钮');
+    document.fullscreenEnabled = true;
+    delete document.documentElement.requestFullscreen;
+
+    for (const eventType of ['contextmenu', 'selectstart', 'dragstart']) {
+        for (const button of boundTouchButtons) {
+            const event = {
+                type: eventType,
+                defaultPrevented: false,
+                preventDefault() { this.defaultPrevented = true; },
+                stopPropagation() {}
+            };
+            button.dispatchEvent(event);
+            assert(event.defaultPrevented, button.dataset.action + ' 的 ' + eventType + ' 没有冒泡到触屏层并被阻止');
+        }
+    }
+
+    const reloadButton = boundTouchButtons.find(button => button.dataset.action === 'reload');
+    gameState = 'playing';
+    touchMode = true;
+    syncTouchControlsVisibility();
+    player.setWeapon(gun);
+    player.ammo = Math.max(0, player.getMagazineSize() - 1);
+    player.reloadTimer = 0;
+    const reloadPointer = {
+        type: 'pointerdown',
+        pointerId: 21,
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() {}
+    };
+    reloadButton.dispatchEvent(reloadPointer);
+    assert(reloadPointer.defaultPrevented && player.reloadTimer > 0, '触屏换弹键没有启动手动装填');
+    reloadButton.dispatchEvent({ ...reloadPointer, type: 'pointerup', preventDefault() {}, stopPropagation() {} });
+    assert(!touchActive.reload, '松开换弹键后触屏状态没有复位');
+
+    gameState = 'reward';
+    syncTouchControlsVisibility();
+    assert(touchControlsEl.style.display === 'none', '奖励页仍显示并拦截触屏战斗按钮');
+    gameState = 'playing';
+    syncTouchControlsVisibility();
+    assert(touchControlsEl.style.display === 'block', '回到战斗后触屏按钮没有恢复');
+
+    // 无 Pointer Events 的旧 Safari/WebView 也必须能点击标题、奖励、通关和死亡界面。
+    const previousHandleTitleClick = handleTitleClick;
+    const previousHandleRewardClick = handleRewardClick;
+    const previousHandleWinClick = handleWinClick;
+    const previousHandleGameOverClick = handleGameOverClick;
+    const legacyCanvasRoutes = [];
+    handleTitleClick = () => { legacyCanvasRoutes.push('title'); };
+    handleRewardClick = () => { legacyCanvasRoutes.push('reward'); };
+    handleWinClick = () => { legacyCanvasRoutes.push('win'); };
+    handleGameOverClick = () => { legacyCanvasRoutes.push('gameover'); };
+    const legacyTouchEnd = () => ({
+        type: 'touchend',
+        changedTouches: [{ clientX: 480, clientY: 270 }],
+        defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        stopPropagation() {}
+    });
+    for (const state of ['title', 'reward', 'win', 'gameover']) {
+        gameState = state;
+        const event = legacyTouchEnd();
+        canvas.dispatchEvent(event);
+        assert(event.defaultPrevented, '旧触屏 ' + state + ' 点击没有阻止浏览器默认手势');
+    }
+    assert(legacyCanvasRoutes.join(',') === 'title,reward,win,gameover', '旧触屏 Canvas 状态路由不完整');
+    handleTitleClick = previousHandleTitleClick;
+    handleRewardClick = previousHandleRewardClick;
+    handleWinClick = previousHandleWinClick;
+    handleGameOverClick = previousHandleGameOverClick;
+
     delete gameContainer.webkitRequestFullscreen;
     initAudio = previousInitAudio;
     startMusic = previousStartMusic;
@@ -618,7 +815,8 @@ const execute = new Function(
     'document',
     'requestAnimationFrame',
     'performance',
+    'sourceHtml',
     match[1] + assertions
 );
 
-execute(windowMock, documentMock, () => 0, globalThis.performance);
+execute(windowMock, documentMock, () => 0, globalThis.performance, html);
