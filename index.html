@@ -15,6 +15,7 @@
             --touch-move-gap: 24px;
             --touch-offset: 40px;
             --touch-bottom: 36px;
+            --touch-move-bottom: 64px;
             --touch-font-size: 28px;
             --touch-action-width: 320px;
             --touch-action-height: 240px;
@@ -109,12 +110,12 @@
         #touchControls .touch-left,
         #touchControls .touch-right {
             position: absolute;
-            bottom: calc(var(--touch-bottom) + env(safe-area-inset-bottom, 0px));
             z-index: 6;
         }
 
         #touchControls .touch-left {
             left: calc(var(--touch-offset) + env(safe-area-inset-left, 0px));
+            bottom: calc(var(--touch-move-bottom) + env(safe-area-inset-bottom, 0px));
             display: flex;
             gap: var(--touch-move-gap);
             pointer-events: auto;
@@ -122,6 +123,7 @@
 
         #touchControls .touch-right {
             right: calc(var(--touch-offset) + env(safe-area-inset-right, 0px));
+            bottom: calc(var(--touch-bottom) + env(safe-area-inset-bottom, 0px));
             width: var(--touch-action-width);
             height: var(--touch-action-height);
             pointer-events: none;
@@ -404,7 +406,8 @@
         #fullscreenButton {
             position: absolute;
             top: calc(10px + env(safe-area-inset-top, 0px));
-            right: calc(12px + env(safe-area-inset-right, 0px));
+            left: calc(50% + 34px);
+            right: auto;
             z-index: 12;
             min-width: 64px;
             height: 38px;
@@ -628,7 +631,7 @@
 <body>
     <div id="gameContainer">
         <canvas id="gameCanvas" tabindex="0" role="application" aria-label="白桦大冒险游戏画布"></canvas>
-        <div id="instructions">A/D 移动 · 空格跳跃 · J/左键攻击 · R 装填 · U 求饶回血 · Esc 暂停 · 奖励按 1/2/3，武器页 F 刷新一次 / S 跳过</div>
+        <div id="instructions">A/D 移动 · 空格跳跃 · J/左键攻击 · R 装填 · U 求饶回血 · Esc 暂停 · 奖励 1/2/3 · 商店 1-6 · F 刷新 / S 放弃或返回</div>
         <div id="touchControls" aria-hidden="true">
             <button id="fullscreenButton" type="button" aria-label="进入全屏">⛶ 全屏</button>
             <button id="touchPauseButton" type="button" aria-label="暂停游戏" aria-pressed="false">
@@ -707,7 +710,7 @@
             ENEMY_DAMAGE_SCALING: 1.1,
             BIOME_LIST: ['plains', 'snow', 'rain', 'nether', 'end', 'night'],
             BOSS_WAVE: 10,
-            MAX_ENEMIES_PER_WAVE: 30,
+            MAX_ENEMIES_PER_WAVE: 20,
             BOW_RELOAD_FRAMES: 60,
             RANGED_DAMAGE_MULTIPLIER: 0.5,
             AUTOMATIC_DAMAGE_MULTIPLIER: 0.35,
@@ -1063,6 +1066,134 @@
             player.applyEnchant(enchant);
         }
 
+        // ============ 白桦商店被动（银 / 金 / 炫彩） ============
+        const PASSIVE_TIERS = {
+            SILVER: { name: '银色', color: '#D7E3EE', glow: '#78909C', cost: 1 },
+            GOLD: { name: '金色', color: '#FFD54F', glow: '#F57F17', cost: 3 },
+            PRISMATIC: { name: '炫彩', color: '#E1BEE7', glow: '#7C4DFF', cost: 5 }
+        };
+
+        const PASSIVE_LIBRARY = [
+            {
+                id: 'keen_edge', name: '锋刃校准', tier: 'SILVER', mode: 'stack', maxLevel: 5,
+                values: [0.10, 0.15, 0.20, 0.25, 0.30],
+                descriptions: ['暴击率 +10%', '暴击率 +15%', '暴击率 +20%', '暴击率 +25%', '暴击率 +30%']
+            },
+            {
+                id: 'birch_skin', name: '白桦护层', tier: 'SILVER', mode: 'stack', maxLevel: 5,
+                values: [0.12, 0.18, 0.24, 0.30, 0.36],
+                descriptions: ['最大生命 +12%', '最大生命 +18%', '最大生命 +24%', '最大生命 +30%', '最大生命 +36%']
+            },
+            {
+                id: 'weapon_mastery', name: '熟练手', tier: 'SILVER', mode: 'stack', maxLevel: 5,
+                values: [0.08, 0.12, 0.16, 0.20, 0.24],
+                descriptions: ['装填/近战间隔 -8%', '装填/近战间隔 -12%', '装填/近战间隔 -16%', '装填/近战间隔 -20%', '装填/近战间隔 -24%']
+            },
+            {
+                id: 'hunter_ledger', name: '猎杀账本', tier: 'SILVER', mode: 'quest', maxLevel: 1,
+                questThresholds: [20, 50, 100], questBonuses: [0.05, 0.10, 0.18],
+                descriptions: ['任务：累计击杀 20/50/100 个敌人，总伤害逐级提升']
+            },
+            {
+                id: 'wayfarer', name: '远行者', tier: 'SILVER', mode: 'quest', maxLevel: 1,
+                questThresholds: [2000, 6000, 12000], questBonuses: [0.04, 0.08, 0.12],
+                descriptions: ['任务：累计移动 2000/6000/12000 像素，移动速度逐级提升']
+            },
+            {
+                id: 'field_bandage', name: '战地绷带', tier: 'SILVER', mode: 'unique', maxLevel: 1,
+                descriptions: ['5 秒未受伤后，每秒回复 1% 最大生命']
+            },
+            {
+                id: 'missile_barrage', name: '白桦弹幕', tier: 'GOLD', mode: 'stack', maxLevel: 5,
+                values: [1, 2, 3, 4, 5],
+                descriptions: ['攻击附带 1 枚飞弹', '攻击附带 2 枚飞弹', '攻击附带 3 枚飞弹', '攻击附带 4 枚飞弹', '攻击附带 5 枚飞弹']
+            },
+            {
+                id: 'pressure_cooker', name: '高压锅', tier: 'GOLD', mode: 'quest', maxLevel: 1,
+                questThresholds: [800, 2400, 6000], questBonuses: [1, 2, 3],
+                descriptions: ['任务：靠近敌人持续灼烧；累计灼烧伤害提升范围、频率与层数']
+            },
+            {
+                id: 'chain_arc', name: '连锁电弧', tier: 'GOLD', mode: 'unique', maxLevel: 1,
+                descriptions: ['每第 3 次武器命中，向附近 2 个敌人传导 40% 伤害']
+            },
+            {
+                id: 'echo_strike', name: '回声打击', tier: 'GOLD', mode: 'unique', maxLevel: 1,
+                descriptions: ['每第 4 次攻击，首次命中追加 60% 回声伤害']
+            },
+            {
+                id: 'elite_contract', name: '精英猎契', tier: 'GOLD', mode: 'quest', maxLevel: 1,
+                questThresholds: [3, 8, 15], questBonuses: [0.08, 0.16, 0.28],
+                descriptions: ['任务：击杀 3/8/15 个精英，对精英与首领伤害逐级提升']
+            },
+            {
+                id: 'last_stand', name: '背水一战', tier: 'GOLD', mode: 'unique', maxLevel: 1,
+                descriptions: ['生命低于 35% 时伤害 +25%、受到伤害 -20%']
+            },
+            {
+                id: 'blood_pact', name: '血色誓约', tier: 'PRISMATIC', mode: 'stack', maxLevel: 5,
+                values: [0.05, 0.07, 0.09, 0.11, 0.13],
+                descriptions: ['武器吸血 5%', '武器吸血 7%', '武器吸血 9%', '武器吸血 11%', '武器吸血 13%']
+            },
+            {
+                id: 'raid_boss', name: '团本首领', tier: 'PRISMATIC', mode: 'quest', maxLevel: 1,
+                questThresholds: [2, 5, 10],
+                descriptions: ['任务：击杀 2/5/10 个精英，最大生命与总伤害同步成长']
+            },
+            {
+                id: 'phoenix_protocol', name: '凤凰协议', tier: 'PRISMATIC', mode: 'unique', maxLevel: 1,
+                descriptions: ['每张地图首次致死时，以 35% 生命复活并震退周围敌人']
+            },
+            {
+                id: 'jeweled_arms', name: '珠光武装', tier: 'PRISMATIC', mode: 'unique', maxLevel: 1,
+                descriptions: ['被动伤害可按一半暴击率暴击，暴击伤害额外 +20%']
+            },
+            {
+                id: 'dual_wield', name: '双持禁术', tier: 'PRISMATIC', mode: 'unique', maxLevel: 1,
+                descriptions: ['攻击间隔 -35%，单次武器伤害 ×65%、击退 ×60%']
+            },
+            {
+                id: 'titan_resolve', name: '泰坦决意', tier: 'PRISMATIC', mode: 'quest', maxLevel: 1,
+                questThresholds: [1, 2.5, 5], questBonuses: [0.05, 0.10, 0.16], relativeToMaxHp: true,
+                descriptions: ['任务：累计承受 100%/250%/500% 最大生命伤害，减伤与伤害逐级提升']
+            }
+        ];
+
+        const PASSIVE_BY_ID = Object.fromEntries(PASSIVE_LIBRARY.map(passive => [passive.id, passive]));
+
+        function getPassiveValue(id, level = 0) {
+            const def = PASSIVE_BY_ID[id];
+            if (!def?.values || level <= 0) return 0;
+            return def.values[Math.min(level, def.values.length) - 1] || 0;
+        }
+
+        function getPassiveChoiceDescription(def, owner = player) {
+            const existing = owner?.getPassiveEntry?.(def.id);
+            const nextLevel = existing && def.mode === 'stack' ? Math.min(def.maxLevel, existing.level + 1) : 1;
+            return def.descriptions[Math.min(nextLevel, def.descriptions.length) - 1];
+        }
+
+        function generatePassiveChoices(tier, count = 3, excludedIds = []) {
+            const excluded = new Set(excludedIds);
+            const eligible = PASSIVE_LIBRARY.filter(def => {
+                if (def.tier !== tier) return false;
+                const existing = player?.getPassiveEntry?.(def.id);
+                if (!existing) return true;
+                return def.mode === 'stack' && existing.level < def.maxLevel;
+            });
+            const shuffle = list => {
+                for (let i = list.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [list[i], list[j]] = [list[j], list[i]];
+                }
+                return list;
+            };
+            // 刷新优先给出全新选项；候选池不足时再用仍然有效的旧选项补足三张卡。
+            const fresh = shuffle(eligible.filter(def => !excluded.has(def.id)));
+            const fallback = shuffle(eligible.filter(def => excluded.has(def.id)));
+            return [...fresh, ...fallback].slice(0, count);
+        }
+
         // ============ 粒子系统 ============
         const particles = [];
 
@@ -1173,130 +1304,15 @@
 
         // ============ 敌人类型定义 ============
         const ENEMY_TYPES = {
-            zombie: { name: '僵尸', baseHp: 50, baseDmg: 10, speed: 1.2, color: '#4CAF50', width: 28, height: 32, knockResist: 1 },
-            runner: { name: '疾跑者', baseHp: 35, baseDmg: 8, speed: 2.2, color: '#8BC34A', width: 24, height: 28, knockResist: 0.8 },
-            tank: { name: '重装尸', baseHp: 90, baseDmg: 14, speed: 0.8, color: '#6D4C41', width: 32, height: 40, knockResist: 1.5 },
-            shooter: { name: '腐弓手', baseHp: 45, baseDmg: 12, speed: 1.0, color: '#3F51B5', width: 26, height: 30, knockResist: 1, ranged: true },
-            leaper: { name: '跃袭尸', baseHp: 42, baseDmg: 11, speed: 1.38, color: '#D97706', width: 25, height: 27, knockResist: 0.72, leaper: true },
-            warden: { name: '晶盾守卫', baseHp: 140, baseDmg: 12, speed: 0.92, color: '#546E7A', width: 30, height: 38, knockResist: 1.55, shield: 300, elite: true, spawnCap: 1 },
-            prism: { name: '蓄光棱镜', baseHp: 58, baseDmg: 18, speed: 0.78, color: '#7E57C2', width: 30, height: 34, knockResist: 1.15, laser: true, elite: true, spawnCap: 1 }
+            zombie: { name: '腐化行尸', baseHp: 50, baseDmg: 10, speed: 1.2, color: '#587A45', accent: '#9CC56A', width: 28, height: 34, knockResist: 1, skill: 'claw' },
+            runner: { name: '地精刺客', baseHp: 35, baseDmg: 8, speed: 2.2, color: '#6F8C32', accent: '#C0D85B', width: 25, height: 29, knockResist: 0.8, skill: 'dash' },
+            tank: { name: '蛮兽人', baseHp: 90, baseDmg: 14, speed: 0.8, color: '#5E7937', accent: '#9CAF55', width: 34, height: 42, knockResist: 1.5, skill: 'slam' },
+            shooter: { name: '骷髅弓手', baseHp: 45, baseDmg: 12, speed: 1.0, color: '#D6C9A5', accent: '#8FA9C9', width: 27, height: 32, knockResist: 1, ranged: true, skill: 'boneArrow', shootInterval: 112 },
+            leaper: { name: '洞穴毒蛛', baseHp: 42, baseDmg: 11, speed: 1.38, color: '#6D2945', accent: '#D15B72', width: 30, height: 24, knockResist: 0.72, leaper: true, skill: 'pounce' },
+            warden: { name: '亡灵盾卫', baseHp: 140, baseDmg: 12, speed: 0.92, color: '#344A59', accent: '#70D5D8', width: 31, height: 39, knockResist: 1.55, shield: 300, elite: true, spawnCap: 1, skill: 'shieldBash' },
+            prism: { name: '幽魂女妖', baseHp: 58, baseDmg: 18, speed: 0.78, color: '#685087', accent: '#D8B4FE', width: 30, height: 36, knockResist: 1.15, laser: true, elite: true, spawnCap: 1, skill: 'soulLaser' },
+            mimic: { name: '噬金币宝箱怪', baseHp: 105, baseDmg: 16, speed: 1.55, color: '#6F3B21', accent: '#FFD166', width: 36, height: 30, knockResist: 1.28, skill: 'mimicBite' }
         };
-
-        const CHAOS_SPAWN_RULES = {
-            startWave: CONFIG.BOSS_WAVE + 1,
-            baseChance: 0.22,
-            chancePerWave: 0.008,
-            maxChance: 0.58,
-            capEveryWaves: 15,
-            maxPerWave: 4
-        };
-        const CHAOS_BASE_TYPES = ['zombie', 'runner', 'tank', 'shooter', 'leaper'];
-        const CHAOS_TRAITS = [
-            { id: 'balanced', name: '异变', hp: 1, damage: 1, speed: 1, knock: 1 },
-            { id: 'frenzy', name: '狂噪', hp: 0.82, damage: 1.26, speed: 1.3, knock: 0.82, leaper: true },
-            { id: 'bulwark', name: '重壳', hp: 1.48, damage: 1.04, speed: 0.72, knock: 1.45, shieldRatio: 0.46 },
-            { id: 'artillery', name: '裂射', hp: 0.8, damage: 1.16, speed: 0.84, knock: 0.9, ranged: true },
-            { id: 'pouncer', name: '跃相', hp: 0.92, damage: 1.1, speed: 1.18, knock: 0.78, leaper: true }
-        ];
-        const CHAOS_MUTATIONS = [
-            { id: 'neutral', name: '', hp: 1, damage: 1, speed: 1, size: 1, knock: 1 },
-            { id: 'giant', name: '巨化', hp: 1.2, damage: 1.1, speed: 0.86, size: 1.24, knock: 1.18 },
-            { id: 'tiny', name: '微缩', hp: 0.76, damage: 0.9, speed: 1.28, size: 0.8, knock: 0.72 },
-            { id: 'crystal', name: '晶化', hp: 1.06, damage: 0.96, speed: 0.94, size: 1.04, knock: 1.16, shieldRatio: 0.32 },
-            { id: 'volatile', name: '爆裂', hp: 0.88, damage: 1.24, speed: 1.08, size: 1.02, knock: 0.9 }
-        ];
-        const CHAOS_NAME_PREFIXES = ['裂界', '逆相', '虚数', '熵潮', '噪点', '折光', '错位', '无序'];
-        const CHAOS_NAME_SUFFIXES = ['行者', '异骸', '游魂', '裂兽', '噬体', '孽物', '影团', '漂移体'];
-
-        function createSeededRandom(seed) {
-            let state = seed >>> 0;
-            return () => {
-                state = (state + 0x6D2B79F5) >>> 0;
-                let value = state;
-                value = Math.imul(value ^ (value >>> 15), value | 1);
-                value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-                return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-            };
-        }
-
-        function clampChaosValue(value, min, max) {
-            return Math.max(min, Math.min(max, value));
-        }
-
-        function createChaosSeed(wave, spawnIndex = 0) {
-            const entropy = Math.floor(Math.random() * 0x100000000) >>> 0;
-            return (entropy ^ Math.imul(wave + 1, 0x9E3779B1) ^ Math.imul(spawnIndex + 1, 0x85EBCA6B)) >>> 0;
-        }
-
-        function createChaosProfile(wave = CHAOS_SPAWN_RULES.startWave, seed = createChaosSeed(wave)) {
-            const random = createSeededRandom(seed);
-            const baseType = CHAOS_BASE_TYPES[Math.floor(random() * CHAOS_BASE_TYPES.length)];
-            const base = ENEMY_TYPES[baseType];
-            const trait = CHAOS_TRAITS[Math.floor(random() * CHAOS_TRAITS.length)];
-            const mutation = CHAOS_MUTATIONS[Math.floor(random() * CHAOS_MUTATIONS.length)];
-            const statJitter = 0.9 + random() * 0.2;
-            const sizeScale = clampChaosValue((mutation.size || 1) * (0.92 + random() * 0.16), 0.72, 1.36);
-            const baseHp = Math.max(18, Math.round(base.baseHp * trait.hp * mutation.hp * statJitter));
-            const baseDmg = Math.max(5, Math.round(base.baseDmg * trait.damage * mutation.damage * (0.94 + random() * 0.12)));
-            const speed = clampChaosValue(base.speed * trait.speed * mutation.speed * (0.94 + random() * 0.12), 0.55, 3.2);
-            const knockResist = clampChaosValue(base.knockResist * trait.knock * mutation.knock, 0.55, 2.15);
-            const ranged = Boolean(base.ranged || trait.ranged);
-            const leaper = !ranged && Boolean(base.leaper || trait.leaper);
-            const shieldRatio = Math.max(trait.shieldRatio || 0, mutation.shieldRatio || 0);
-            const hue = Math.floor(random() * 360);
-            const accentHue = (hue + 105 + Math.floor(random() * 120)) % 360;
-            const prefix = CHAOS_NAME_PREFIXES[Math.floor(random() * CHAOS_NAME_PREFIXES.length)];
-            const suffix = CHAOS_NAME_SUFFIXES[Math.floor(random() * CHAOS_NAME_SUFFIXES.length)];
-
-            return {
-                seed: seed >>> 0,
-                name: `${prefix}${mutation.name}${trait.name}${suffix}`,
-                baseType,
-                traitId: trait.id,
-                mutationId: mutation.id,
-                baseHp,
-                baseDmg,
-                speed,
-                color: `hsl(${hue}, 72%, 48%)`,
-                accent: `hsl(${accentHue}, 88%, 68%)`,
-                eyeColor: `hsl(${(accentHue + 160) % 360}, 100%, 78%)`,
-                width: Math.round(clampChaosValue(base.width * sizeScale, 18, 44)),
-                height: Math.round(clampChaosValue(base.height * sizeScale, 23, 52)),
-                knockResist,
-                ranged,
-                leaper,
-                shield: Math.round(baseHp * shieldRatio),
-                shootInterval: Math.round(82 + random() * 70),
-                shape: Math.floor(random() * 4),
-                pattern: Math.floor(random() * 4),
-                eyeCount: 1 + Math.floor(random() * 3),
-                hornCount: Math.floor(random() * 3),
-                wave
-            };
-        }
-
-        function getChaosSpawnChance(wave) {
-            if (wave < CHAOS_SPAWN_RULES.startWave) return 0;
-            return Math.min(
-                CHAOS_SPAWN_RULES.maxChance,
-                CHAOS_SPAWN_RULES.baseChance + (wave - CHAOS_SPAWN_RULES.startWave) * CHAOS_SPAWN_RULES.chancePerWave
-            );
-        }
-
-        function getChaosSpawnCap(wave) {
-            if (wave < CHAOS_SPAWN_RULES.startWave) return 0;
-            return Math.min(
-                CHAOS_SPAWN_RULES.maxPerWave,
-                1 + Math.floor((wave - CHAOS_SPAWN_RULES.startWave) / CHAOS_SPAWN_RULES.capEveryWaves)
-            );
-        }
-
-        function shouldSpawnChaosEnemy(wave, spawnedChaosCount = 0, random = Math.random) {
-            return gameMode === 'endless'
-                && !isBossWave(wave)
-                && spawnedChaosCount < getChaosSpawnCap(wave)
-                && random() < getChaosSpawnChance(wave);
-        }
 
         // ============ 投射物 ============
         const projectiles = [];
@@ -1317,6 +1333,10 @@
                 this.knockback = options.knockback ?? 4;
                 this.knockbackFrames = options.knockbackFrames ?? 6;
                 this.model = options.model || 'orb';
+                this.damageSource = options.damageSource || (owner === 'player' ? 'weapon' : 'enemy');
+                this.passiveDamage = Boolean(options.passiveDamage);
+                this.canCrit = options.canCrit !== false;
+                this.noTrigger = Boolean(options.noTrigger);
                 this.token = `projectile-${nextProjectileId++}`;
                 this.trail = [];
                 this.hitTargets = new Set();
@@ -1384,6 +1404,17 @@
         let rewardQueue = [];
         let currentRewardType = 'weapon';
         let weaponRewardRefreshAvailable = false;
+        let birchCoins = 0;
+        let treasureChest = null;
+        let mapTravelDirection = 1;
+        let shopView = 'menu';
+        let shopChoices = [];
+        let shopPackTier = null;
+        let shopRefreshAvailable = false;
+        let shopFragmentClaimed = false;
+        let shopPage = 0;
+        let pendingPassive = null;
+        let shopMessage = '';
         let hoveredChoice = -1;
         let hoveredRewardAction = null;
         let mouseX = 0;
@@ -1423,6 +1454,23 @@
             skip: { x: 505, y: 444, w: 220, h: 56 }
         };
 
+        const SHOP_MENU_BUTTONS = {
+            weapon: { x: 85, y: 152, w: 245, h: 82 },
+            fragment: { x: 357, y: 152, w: 245, h: 82 },
+            silver: { x: 630, y: 152, w: 245, h: 82 },
+            gold: { x: 85, y: 258, w: 245, h: 82 },
+            prismatic: { x: 357, y: 258, w: 245, h: 82 },
+            leave: { x: 630, y: 258, w: 245, h: 82 }
+        };
+
+        const SHOP_ACTION_BUTTONS = {
+            back: { x: 48, y: 462, w: 176, h: 50 },
+            refresh: { x: 246, y: 462, w: 216, h: 50 },
+            previous: { x: 486, y: 462, w: 132, h: 50 },
+            next: { x: 642, y: 462, w: 132, h: 50 },
+            skip: { x: 796, y: 462, w: 116, h: 50 }
+        };
+
         const GAMEOVER_BUTTONS = {
             restart: { x: CONFIG.CANVAS_WIDTH / 2 - 215, y: 458, w: 200, h: 54 },
             title: { x: CONFIG.CANVAS_WIDTH / 2 + 15, y: 458, w: 200, h: 54 }
@@ -1444,6 +1492,9 @@
                 projectilesFired: 0,
                 weaponsClaimed: 0,
                 fragmentsClaimed: 0,
+                passivesClaimed: 0,
+                birchCoinsEarned: 0,
+                birchCoinsSpent: 0,
                 highestWave: 1,
                 activePlayMs: 0,
                 endlessKills: 0,
@@ -1457,6 +1508,9 @@
                 endlessProjectilesFired: 0,
                 endlessWeaponsClaimed: 0,
                 endlessFragmentsClaimed: 0,
+                endlessPassivesClaimed: 0,
+                endlessBirchCoinsEarned: 0,
+                endlessBirchCoinsSpent: 0,
                 endlessActivePlayMs: 0
             };
         }
@@ -1475,6 +1529,9 @@
             runStats.endlessProjectilesFired = 0;
             runStats.endlessWeaponsClaimed = 0;
             runStats.endlessFragmentsClaimed = 0;
+            runStats.endlessPassivesClaimed = 0;
+            runStats.endlessBirchCoinsEarned = 0;
+            runStats.endlessBirchCoinsSpent = 0;
             runStats.endlessActivePlayMs = 0;
         }
 
@@ -1491,10 +1548,11 @@
             if (isBoss) {
                 runStats.bossKills++;
                 if (gameMode === 'endless') runStats.endlessBossKills++;
-            } else if (target?.isEliteType || target?.empowered) {
+            } else if (target?.isEliteType) {
                 runStats.eliteKills++;
                 if (gameMode === 'endless') runStats.endlessEliteKills++;
             }
+            player?.onKill?.(target);
         }
 
         function recordDamageDealt(amount) {
@@ -1526,6 +1584,10 @@
                 projectilesFired: endless ? runStats.endlessProjectilesFired : runStats.projectilesFired,
                 weaponsClaimed: endless ? runStats.endlessWeaponsClaimed : runStats.weaponsClaimed,
                 fragmentsClaimed: endless ? runStats.endlessFragmentsClaimed : runStats.fragmentsClaimed,
+                passivesClaimed: endless ? runStats.endlessPassivesClaimed : runStats.passivesClaimed,
+                birchCoinsEarned: endless ? runStats.endlessBirchCoinsEarned : runStats.birchCoinsEarned,
+                birchCoinsSpent: endless ? runStats.endlessBirchCoinsSpent : runStats.birchCoinsSpent,
+                birchCoins,
                 durationMs: endless ? runStats.endlessActivePlayMs : runStats.activePlayMs,
                 finalWeapon: {
                     name: player.weapon.name,
@@ -1534,6 +1596,13 @@
                     attackDamage: player.getAttackDamage()
                 },
                 upgrades: { ...player.upgrades },
+                passives: player.passives.map(entry => ({
+                    id: entry.id,
+                    name: PASSIVE_BY_ID[entry.id]?.name || entry.id,
+                    tier: PASSIVE_BY_ID[entry.id]?.tier || 'SILVER',
+                    level: entry.level,
+                    progress: entry.progress || 0
+                })),
                 maxHp: player.maxHp,
                 biomeName: currentBiome.name
             };
@@ -1803,10 +1872,12 @@
         const TOUCH_EDGE_GAP = 4;
 
         function calculateTouchControlMetrics(baseSize) {
-            const attackSize = Math.max(64, Math.min(190, baseSize * 1.48));
+            // 默认方向键明显放大，并仅比主攻击键小一圈，避免触屏移动误触与够不到。
+            const attackSize = Math.max(52, Math.min(190, baseSize * 1.18));
             const gap = Math.max(8, Math.min(28, baseSize * 0.18));
             const offset = Math.max(12, baseSize * 0.22);
             const bottom = Math.max(12, baseSize * 0.2);
+            const moveBottom = bottom + Math.max(18, Math.min(34, baseSize * 0.26));
             const arcNear = attackSize + gap;
             const arcFar = arcNear + baseSize * 0.55;
             const arcTop = attackSize * 0.82;
@@ -1854,6 +1925,7 @@
                 gap,
                 offset,
                 bottom,
+                moveBottom,
                 arcNear,
                 arcFar,
                 arcTop,
@@ -1863,7 +1935,7 @@
                 actionWidth,
                 actionHeight,
                 totalWidth: baseSize * 2 + TOUCH_MOVE_GAP + actionWidth + offset * 2 + TOUCH_CLUSTER_GAP,
-                totalHeight: actionHeight + bottom + TOUCH_EDGE_GAP
+                totalHeight: Math.max(actionHeight + bottom, baseSize + moveBottom) + TOUCH_EDGE_GAP
             };
         }
 
@@ -1872,7 +1944,7 @@
             const vh = window.visualViewport?.height || window.innerHeight || BASE_CANVAS_HEIGHT;
             const shortSide = Math.min(vw, vh);
             const compactWidth = Math.min(vw, vh * (BASE_CANVAS_WIDTH / BASE_CANVAS_HEIGHT));
-            const rawBaseSize = Math.max(54, Math.min(118, Math.min(shortSide * 0.12, compactWidth * 0.105)));
+            const rawBaseSize = Math.max(62, Math.min(132, Math.min(shortSide * 0.145, compactWidth * 0.115)));
             const requestedBaseSize = Math.max(44, Math.min(150, rawBaseSize * touchControlScale));
             const fitsViewport = metrics => metrics.totalWidth <= vw && metrics.totalHeight <= vh;
             let baseSize = requestedBaseSize;
@@ -1905,6 +1977,7 @@
             root.setProperty('--touch-move-gap', `${TOUCH_MOVE_GAP}px`);
             root.setProperty('--touch-offset', `${metrics.offset}px`);
             root.setProperty('--touch-bottom', `${metrics.bottom}px`);
+            root.setProperty('--touch-move-bottom', `${metrics.moveBottom}px`);
             root.setProperty('--touch-font-size', `${fontSize}px`);
             root.setProperty('--touch-action-width', `${metrics.actionWidth}px`);
             root.setProperty('--touch-action-height', `${metrics.actionHeight}px`);
@@ -2073,6 +2146,30 @@
         let mousePressed = false;
         let camera = { x: 0, y: 0 };
         let touchActive = { left: false, right: false, jump: false, reload: false, attack: false, heal: false };
+        const touchAttackPointerIds = new Set();
+        const canvasAttackPointerIds = new Set();
+
+        function getInputPointerIds(event) {
+            if (event?.pointerId !== undefined) return [`pointer:${event.pointerId}`];
+            const changedTouches = event?.changedTouches;
+            if (changedTouches?.length) {
+                return Array.from(changedTouches, touch => `touch:${touch.identifier}`);
+            }
+            return ['legacy-pointer'];
+        }
+
+        function syncPointerAttackState() {
+            touchActive.attack = touchAttackPointerIds.size > 0;
+            mousePressed = touchAttackPointerIds.size > 0 || canvasAttackPointerIds.size > 0;
+        }
+
+        function setAttackPointers(pointerSet, event, state) {
+            for (const pointerId of getInputPointerIds(event)) {
+                if (state) pointerSet.add(pointerId);
+                else pointerSet.delete(pointerId);
+            }
+            syncPointerAttackState();
+        }
 
         // ============ 地图生成 ============
         const MAP_WIDTH = 100; // 地图宽度（方块数）
@@ -2224,6 +2321,18 @@
                 this.attackSequence = 0;
                 this.attackEffectTriggered = false;
                 this.upgrades = { damage: 0, hp: 0, range: 0, ammo: 0, reloadSpeed: 0 };
+                this.passives = [];
+                this.distanceTravelled = 0;
+                this.safeFrames = 0;
+                this.passiveHealAccumulator = 0;
+                this.passiveHitCount = 0;
+                this.passiveAttackCount = 0;
+                this.echoReady = false;
+                this.missileCooldown = 0;
+                this.pressureTimer = 0;
+                this.pressureSequence = 0;
+                this.lastStandActive = false;
+                this.phoenixAvailable = false;
                 this.ammo = 0;
                 this.reloadTimer = 0;
                 this.reloadMax = 0;
@@ -2235,13 +2344,16 @@
 
             update() {
                 if (gameState !== 'playing') return;
+                const previousX = this.x;
+                const wasOnGround = this.onGround;
+                const moveSpeed = this.getMoveSpeed();
                 
                 // 移动输入
                 if (keys['KeyA'] || keys['ArrowLeft']) {
-                    this.vx = -CONFIG.PLAYER_SPEED;
+                    this.vx = -moveSpeed;
                     this.facing = -1;
                 } else if (keys['KeyD'] || keys['ArrowRight']) {
-                    this.vx = CONFIG.PLAYER_SPEED;
+                    this.vx = moveSpeed;
                     this.facing = 1;
                 } else {
                     this.vx = 0;
@@ -2328,10 +2440,186 @@
                     this.walkFrame = 0;
                 }
 
-                // 边界限制
-                if (this.x < 0) this.x = 0;
-                if (this.x > MAP_WIDTH * CONFIG.TILE_SIZE - this.width) {
-                    this.x = MAP_WIDTH * CONFIG.TILE_SIZE - this.width;
+                // 地图左右边缘相连：跨出一侧后从另一侧无缝进入。
+                const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+                let wrappedAtEdge = false;
+                if (this.x < 0) {
+                    this.x = worldWidth - this.width;
+                    wrappedAtEdge = true;
+                } else if (this.x > worldWidth - this.width) {
+                    this.x = 0;
+                    wrappedAtEdge = true;
+                }
+                if (wrappedAtEdge) {
+                    const destinationGroundY = findGroundYAt(this.x + this.width / 2, this.height) - 2;
+                    const embeddedAtDestination = this.y > destinationGroundY;
+                    if (embeddedAtDestination || (wasOnGround && this.vy >= 0)) {
+                        this.y = destinationGroundY;
+                        this.vy = 0;
+                        this.onGround = true;
+                    }
+                }
+                const moved = Math.abs(this.x - previousX);
+                if (moved > 0 && moved < moveSpeed * 2.5) {
+                    this.distanceTravelled += moved;
+                    this.advancePassiveQuest('wayfarer', moved);
+                }
+                this.updatePassiveEffects();
+            }
+
+            getPassiveEntry(id) {
+                return this.passives.find(entry => entry.id === id) || null;
+            }
+
+            getPassiveLevel(id) {
+                return this.getPassiveEntry(id)?.level || 0;
+            }
+
+            getPassiveStage(id) {
+                return this.getPassiveEntry(id)?.stage || 0;
+            }
+
+            hasPassive(id) {
+                return Boolean(this.getPassiveEntry(id));
+            }
+
+            getMoveSpeed() {
+                const stage = this.getPassiveStage('wayfarer');
+                const bonus = PASSIVE_BY_ID.wayfarer.questBonuses[stage - 1] || 0;
+                return CONFIG.PLAYER_SPEED * (1 + bonus);
+            }
+
+            getPassiveDamageMultiplier(target = null) {
+                let multiplier = 1;
+                const hunterStage = this.getPassiveStage('hunter_ledger');
+                multiplier *= 1 + (PASSIVE_BY_ID.hunter_ledger.questBonuses[hunterStage - 1] || 0);
+                const raidStage = this.getPassiveStage('raid_boss');
+                multiplier *= 1 + [0, 0.06, 0.12, 0.20][raidStage];
+                if (target?.elite || target instanceof BirchCorruptBoss) {
+                    const eliteStage = this.getPassiveStage('elite_contract');
+                    multiplier *= 1 + (PASSIVE_BY_ID.elite_contract.questBonuses[eliteStage - 1] || 0);
+                }
+                if (this.lastStandActive && this.hasPassive('last_stand')) multiplier *= 1.25;
+                const titanStage = this.getPassiveStage('titan_resolve');
+                multiplier *= 1 + (PASSIVE_BY_ID.titan_resolve.questBonuses[titanStage - 1] || 0);
+                return multiplier;
+            }
+
+            resolveOutgoingDamage(baseDamage, target, options = {}) {
+                let damage = Math.max(0, baseDamage) * (options.preResolved ? 1 : this.getPassiveDamageMultiplier(target));
+                if (this.hasPassive('dual_wield') && options.source === 'weapon') damage *= 0.65;
+                const critLevel = this.getPassiveLevel('keen_edge');
+                let critChance = Math.min(0.5, getPassiveValue('keen_edge', critLevel));
+                let canCrit = options.canCrit !== false && options.source === 'weapon';
+                if (!canCrit && this.hasPassive('jeweled_arms') && options.passiveDamage) {
+                    critChance *= 0.5;
+                    canCrit = true;
+                }
+                const critical = canCrit && critChance > 0 && Math.random() < critChance;
+                if (critical) damage *= this.hasPassive('jeweled_arms') ? 1.7 : 1.5;
+                return { damage, critical };
+            }
+
+            getIncomingDamageMultiplier() {
+                let multiplier = this.lastStandActive && this.hasPassive('last_stand') ? 0.8 : 1;
+                const titanStage = this.getPassiveStage('titan_resolve');
+                multiplier *= 1 - (PASSIVE_BY_ID.titan_resolve.questBonuses[titanStage - 1] || 0);
+                return Math.max(0.55, multiplier);
+            }
+
+            advancePassiveQuest(id, amount) {
+                const entry = this.getPassiveEntry(id);
+                const def = PASSIVE_BY_ID[id];
+                if (!entry || def?.mode !== 'quest' || !Number.isFinite(amount) || amount <= 0) return false;
+                entry.progress += amount;
+                const thresholds = def.relativeToMaxHp
+                    ? def.questThresholds.map(value => value * this.maxHp)
+                    : def.questThresholds;
+                let nextStage = entry.stage;
+                while (nextStage < thresholds.length && entry.progress >= thresholds[nextStage]) nextStage++;
+                if (nextStage === entry.stage) return false;
+                entry.stage = nextStage;
+                if (['birch_skin', 'raid_boss'].includes(id)) this.setWeapon(this.weapon);
+                announce(`${def.name}任务进化至 ${entry.stage} 阶。`);
+                floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 22, `${def.name} III`.replace('III', `Lv.${entry.stage}`), PASSIVE_TIERS[def.tier].color, 14));
+                return true;
+            }
+
+            addOrUpgradePassive(def) {
+                if (!def) return { applied: false, needsReplacement: false };
+                const existing = this.getPassiveEntry(def.id);
+                if (existing) {
+                    if (def.mode !== 'stack' || existing.level >= def.maxLevel) return { applied: false, needsReplacement: false };
+                    existing.level++;
+                    this.setWeapon(this.weapon);
+                    return { applied: true, upgraded: true, needsReplacement: false };
+                }
+                if (this.passives.length >= 4) return { applied: false, needsReplacement: true };
+                this.passives.push({ id: def.id, level: 1, progress: 0, stage: 0 });
+                if (def.id === 'phoenix_protocol') this.phoenixAvailable = true;
+                this.setWeapon(this.weapon);
+                return { applied: true, upgraded: false, needsReplacement: false };
+            }
+
+            replacePassive(index, def) {
+                if (!def || index < 0 || index >= this.passives.length) return false;
+                this.passives[index] = { id: def.id, level: 1, progress: 0, stage: 0 };
+                this.phoenixAvailable = this.hasPassive('phoenix_protocol');
+                this.setWeapon(this.weapon);
+                return true;
+            }
+
+            resetMapPassives() {
+                this.phoenixAvailable = this.hasPassive('phoenix_protocol');
+            }
+
+            updatePassiveEffects() {
+                if (this.missileCooldown > 0) this.missileCooldown--;
+                this.safeFrames++;
+                const hpRatio = this.maxHp > 0 ? this.hp / this.maxHp : 1;
+                if (!this.hasPassive('last_stand')) this.lastStandActive = false;
+                else if (!this.lastStandActive && hpRatio < 0.35) this.lastStandActive = true;
+                else if (this.lastStandActive && hpRatio > 0.45) this.lastStandActive = false;
+
+                if (this.hasPassive('field_bandage') && this.safeFrames >= 300 && this.hp < this.maxHp) {
+                    this.passiveHealAccumulator += this.maxHp * 0.01 / 60;
+                    const heal = Math.floor(this.passiveHealAccumulator);
+                    if (heal > 0) {
+                        this.hp = Math.min(this.maxHp, this.hp + heal);
+                        this.passiveHealAccumulator -= heal;
+                    }
+                }
+
+                if (this.hasPassive('pressure_cooker')) {
+                    this.pressureTimer--;
+                    const stage = this.getPassiveStage('pressure_cooker');
+                    const interval = stage >= 2 ? 42 : 60;
+                    if (this.pressureTimer <= 0) {
+                        this.pressureTimer = interval;
+                        this.triggerPressureCooker(stage);
+                    }
+                }
+            }
+
+            triggerPressureCooker(stage = 0) {
+                this.pressureSequence++;
+                const radius = 110 + (stage >= 1 ? 20 : 0) + (stage >= 3 ? 20 : 0);
+                const maxStacks = stage >= 3 ? 9 : 6;
+                const centerX = this.x + this.width / 2;
+                const centerY = this.y + this.height / 2;
+                const pressureTargets = activeBoss?.alive ? [...enemies, activeBoss] : enemies;
+                for (const enemy of pressureTargets) {
+                    if (!enemy.alive) continue;
+                    const dx = enemy.x + enemy.width / 2 - centerX;
+                    const dy = enemy.y + enemy.height / 2 - centerY;
+                    if (dx * dx + dy * dy > radius * radius) continue;
+                    enemy.pressureStacks = Math.min(maxStacks, (enemy.pressureStacks || 0) + 1);
+                    enemy.pressureStackTimer = 150;
+                    const base = this.getAttackDamage() * 0.04 + this.maxHp * 0.0025;
+                    const cap = enemy.maxHp * 0.03;
+                    enemy.takeDamage(Math.min(cap, base * enemy.pressureStacks), 0, 0, `pressure-${currentWave}-${this.pressureSequence}-${enemy.x}`, 0, {
+                        source: 'pressureCooker', passiveDamage: true, canCrit: false, noTrigger: true
+                    });
                 }
             }
 
@@ -2345,6 +2633,10 @@
                 return this.weapon.damage + this.getEffectiveDamageBonus(pelletCount);
             }
 
+            getAttackKnockback() {
+                return this.weapon.getKnockback() * (this.hasPassive('dual_wield') ? 0.6 : 1);
+            }
+
             getMagazineSize() {
                 if (!this.weapon?.isRanged) return 0;
                 // 弓始终一箭一装，严格保持 1 秒装填节奏。
@@ -2354,9 +2646,10 @@
 
             startReload() {
                 if (!this.weapon?.isRanged || this.reloadTimer > 0 || this.ammo >= this.getMagazineSize()) return;
+                const mastery = getPassiveValue('weapon_mastery', this.getPassiveLevel('weapon_mastery'));
                 this.reloadMax = this.weapon.model === 'bow'
-                    ? CONFIG.BOW_RELOAD_FRAMES
-                    : this.weapon.getReloadFrames(this.upgrades.reloadSpeed);
+                    ? Math.max(18, Math.round(CONFIG.BOW_RELOAD_FRAMES * (1 - mastery)))
+                    : this.weapon.getReloadFrames(Math.min(0.55, this.upgrades.reloadSpeed + mastery));
                 this.reloadTimer = this.reloadMax;
                 playSfx('reload');
             }
@@ -2376,14 +2669,17 @@
                 }
 
                 this.attacking = true;
-                this.attackDuration = this.weapon.attackProfile.duration;
+                const mastery = getPassiveValue('weapon_mastery', this.getPassiveLevel('weapon_mastery'));
+                const dualWield = this.hasPassive('dual_wield') ? 0.65 : 1;
+                this.attackDuration = Math.max(8, Math.round(this.weapon.attackProfile.duration * (1 - mastery)));
                 this.attackTimer = this.attackDuration;
-                this.attackCooldown = this.weapon.attackProfile.cooldown;
+                this.attackCooldown = Math.max(8, Math.round(this.weapon.attackProfile.cooldown * (1 - mastery) * dualWield));
                 this.attackSequence++;
                 this.attackEffectTriggered = false;
                 runStats.meleeAttacks++;
                 if (gameMode === 'endless') runStats.endlessMeleeAttacks++;
                 playSfx(`swing_${this.weapon.model || 'sword'}`);
+                this.triggerAttackPassives();
             }
 
             fireRangedWeapon() {
@@ -2391,7 +2687,8 @@
                 this.attacking = true;
                 this.attackDuration = Math.min(10, weapon.fireCooldown);
                 this.attackTimer = this.attackDuration;
-                this.attackCooldown = weapon.fireCooldown;
+                const dualWield = this.hasPassive('dual_wield') ? 0.65 : 1;
+                this.attackCooldown = Math.max(3, Math.round(weapon.fireCooldown * dualWield));
                 this.attackSequence++;
                 this.ammo--;
 
@@ -2420,11 +2717,12 @@
                         {
                             gravity: weapon.projectileGravity,
                             pierce: weapon.pierce,
-                            knockback: weapon.getProjectileKnockback(),
+                            knockback: weapon.getProjectileKnockback() * (this.hasPassive('dual_wield') ? 0.6 : 1),
                             knockbackFrames: weapon.getProjectileKnockbackFrames(),
                             model: weapon.model,
                             size: weapon.projectileSize,
-                            life: 190
+                            life: 190,
+                            damageSource: 'weapon'
                         }
                     ));
                 }
@@ -2437,7 +2735,85 @@
                 playSfx(shotSound);
                 spawnImpactParticles(muzzleX, muzzleY, weapon.particleColor, ['shotgun', 'launcher'].includes(weapon.model) ? 12 : 6, 0.55);
                 screenShake = Math.max(screenShake, weapon.model === 'launcher' ? 8 : weapon.model === 'shotgun' ? 6 : 2.5);
+                this.triggerAttackPassives();
                 if (this.ammo <= 0) this.startReload();
+            }
+
+            triggerAttackPassives() {
+                this.passiveAttackCount++;
+                if (this.hasPassive('echo_strike') && this.passiveAttackCount % 4 === 0) this.echoReady = true;
+                const missileCount = Math.round(getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage')));
+                if (missileCount <= 0 || this.missileCooldown > 0) return;
+                const targets = enemies
+                    .filter(enemy => enemy.alive)
+                    .sort((a, b) => Math.abs(a.x - this.x) - Math.abs(b.x - this.x));
+                const target = targets[0] || (activeBoss?.alive ? activeBoss : null);
+                if (!target) return;
+                this.missileCooldown = 72;
+                const originX = this.x + this.width / 2;
+                const originY = this.y + 10;
+                const targetX = target.x + target.width / 2;
+                const targetY = target.y + target.height / 2;
+                const baseAngle = Math.atan2(targetY - originY, targetX - originX);
+                for (let index = 0; index < missileCount; index++) {
+                    const spread = (index - (missileCount - 1) / 2) * 0.09;
+                    const angle = baseAngle + spread;
+                    projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 9, Math.sin(angle) * 9,
+                        this.getAttackDamage() * 0.18, '#FFD54F', 'player', {
+                            size: 4, life: 150, model: 'staff', knockback: 0, knockbackFrames: 0,
+                            damageSource: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
+                        }));
+                }
+                spawnAttackParticles(originX, originY, '#FFD54F', 5 + missileCount);
+            }
+
+            onDamageDealt(actualDamage, target, options = {}) {
+                if (!Number.isFinite(actualDamage) || actualDamage <= 0) return;
+                if (options.source === 'pressureCooker') this.advancePassiveQuest('pressure_cooker', actualDamage);
+                if (options.source !== 'weapon') return;
+
+                const lifesteal = getPassiveValue('blood_pact', this.getPassiveLevel('blood_pact'));
+                if (lifesteal > 0 && this.hp > 0) {
+                    const healed = Math.min(this.maxHp - this.hp, actualDamage * lifesteal);
+                    if (healed > 0) {
+                        this.hp += healed;
+                        floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 12, `+${Math.max(1, Math.round(healed))}`, '#EF9A9A', 11));
+                    }
+                }
+                if (options.noTrigger) return;
+
+                this.passiveHitCount++;
+                if (this.hasPassive('chain_arc') && this.passiveHitCount % 3 === 0) {
+                    const originX = target.x + target.width / 2;
+                    const candidates = enemies
+                        .filter(enemy => enemy.alive && enemy !== target)
+                        .sort((a, b) => Math.abs((a.x + a.width / 2) - originX) - Math.abs((b.x + b.width / 2) - originX))
+                        .slice(0, 2);
+                    for (const chained of candidates) {
+                        chained.takeDamage(actualDamage * 0.4, 0, 0, `chain-${nextProjectileId++}`, 0, {
+                            source: 'chainArc', passiveDamage: true, canCrit: false, noTrigger: true, preResolved: true
+                        });
+                        spawnImpactParticles(chained.x + chained.width / 2, chained.y + chained.height / 2, '#80DEEA', 7, 0.65);
+                    }
+                }
+
+                if (this.echoReady) {
+                    this.echoReady = false;
+                    if (target?.alive) {
+                        target.takeDamage(actualDamage * 0.6, 0, 0, `echo-${nextProjectileId++}`, 0, {
+                            source: 'echoStrike', passiveDamage: true, canCrit: false, noTrigger: true, preResolved: true
+                        });
+                        floatingTexts.push(new FloatingText(target.x + target.width / 2, target.y - 18, '回声', '#CE93D8', 12));
+                    }
+                }
+            }
+
+            onKill(target) {
+                this.advancePassiveQuest('hunter_ledger', 1);
+                if (target?.elite || target instanceof BirchCorruptBoss) {
+                    this.advancePassiveQuest('elite_contract', 1);
+                    this.advancePassiveQuest('raid_boss', 1);
+                }
             }
 
             handleCollision() {
@@ -2595,7 +2971,9 @@
                 const prevMax = this.maxHp || this.baseMaxHp;
                 const prevHp = this.hp;
                 const bonus = (weapon.hpBonus || 0) + this.upgrades.hp;
-                const newMax = this.baseMaxHp + bonus;
+                const birchSkin = getPassiveValue('birch_skin', this.getPassiveLevel('birch_skin'));
+                const raidHp = [0, 0.10, 0.20, 0.30][this.getPassiveStage('raid_boss')] || 0;
+                const newMax = Math.round((this.baseMaxHp + bonus) * (1 + birchSkin + raidHp));
                 const ratio = prevMax > 0 ? prevHp / prevMax : 1;
                 this.weapon = weapon;
                 this.maxHp = newMax;
@@ -2621,20 +2999,56 @@
 
             resetProgression() {
                 this.upgrades = { damage: 0, hp: 0, range: 0, ammo: 0, reloadSpeed: 0 };
+                this.passives = [];
+                this.distanceTravelled = 0;
+                this.safeFrames = 0;
+                this.passiveHealAccumulator = 0;
+                this.passiveHitCount = 0;
+                this.passiveAttackCount = 0;
+                this.echoReady = false;
+                this.missileCooldown = 0;
+                this.pressureTimer = 0;
+                this.pressureSequence = 0;
+                this.lastStandActive = false;
+                this.phoenixAvailable = false;
                 this.setWeapon(new Weapon(WEAPON_DATABASE.COMMON[0], 'COMMON'));
             }
 
             takeDamage(amount, cause = 'unknown') {
                 if (gameState !== 'playing' || this.invincible > 0) return;
-                const actualDamage = Math.min(this.hp, amount);
-                this.hp -= amount;
+                const adjustedDamage = Math.max(0, amount * this.getIncomingDamageMultiplier());
+                const actualDamage = Math.min(this.hp, adjustedDamage);
+                this.hp -= adjustedDamage;
+                this.safeFrames = 0;
+                this.passiveHealAccumulator = 0;
                 recordDamageTaken(actualDamage);
+                this.advancePassiveQuest('titan_resolve', actualDamage);
                 this.invincible = 60;
                 screenShake = Math.max(screenShake, 8);
                 damageFlash = Math.max(damageFlash, 10);
                 spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, '#FF5252', 12, 0.85);
-                floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 8, `-${Math.round(amount)}`, '#FF8A80', 16));
+                floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 8, `-${Math.round(adjustedDamage)}`, '#FF8A80', 16));
                 if (this.hp <= 0) {
+                    if (this.phoenixAvailable) {
+                        this.phoenixAvailable = false;
+                        this.hp = Math.max(1, Math.round(this.maxHp * 0.35));
+                        this.invincible = 150;
+                        const blastDamage = this.getAttackDamage() * 2;
+                        for (const enemy of enemies) {
+                            if (!enemy.alive) continue;
+                            const dx = enemy.x + enemy.width / 2 - (this.x + this.width / 2);
+                            const dy = enemy.y + enemy.height / 2 - (this.y + this.height / 2);
+                            if (dx * dx + dy * dy <= 190 * 190) {
+                                enemy.takeDamage(blastDamage, Math.sign(dx) || 1, 14, `phoenix-${currentWave}`, 16, {
+                                    source: 'phoenix', passiveDamage: true, canCrit: false, noTrigger: true
+                                });
+                            }
+                        }
+                        spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, '#FF7043', 36);
+                        floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 26, '凤凰重生', '#FFD54F', 18));
+                        announce('凤凰协议触发：本地图的致死伤害已被抵消。');
+                        return;
+                    }
                     this.hp = 0;
                     enterGameOver(cause);
                 }
@@ -2687,7 +3101,6 @@
 
             drawPixelPlayer(ctx, x, y, weaponPose = this.getWeaponPose()) {
                 const f = this.facing;
-                const offsetX = f === -1 ? this.width : 0;
                 ctx.save();
                 if (f === -1) {
                     ctx.translate(x + this.width, y);
@@ -2696,57 +3109,7 @@
                     y = 0;
                 }
 
-                // 头发 (棕色)
-                ctx.fillStyle = '#5D4037';
-                ctx.fillRect(x + 6, y, 12, 4);
-                ctx.fillRect(x + 4, y + 2, 4, 6);
-
-                // 头部/脸 (肤色)
-                ctx.fillStyle = '#FFCC99';
-                ctx.fillRect(x + 6, y + 4, 12, 10);
-
-                // 眼睛
-                ctx.fillStyle = '#333';
-                ctx.fillRect(x + 14, y + 6, 2, 3);
-
-                // 身体 (蓝色衬衫)
-                ctx.fillStyle = '#263F66';
-                ctx.fillRect(x + 5, y + 13, 14, 12);
-                ctx.fillStyle = '#4FC3F7';
-                ctx.fillRect(x + 6, y + 14, 12, 10);
-
-                // 围巾与胸甲高光
-                ctx.fillStyle = '#FF7043';
-                ctx.fillRect(x + 5, y + 13, 14, 3);
-                ctx.fillRect(x + 3, y + 15, 4, 3);
-                ctx.fillStyle = '#B3E5FC';
-                ctx.fillRect(x + 8, y + 17, 3, 5);
-
-                // 手臂 (肤色)
-                ctx.fillStyle = '#FFCC99';
-                const armOffset = this.attacking ? -4 : (this.walkFrame % 2 === 0 ? 0 : 2);
-                ctx.fillRect(x + 2, y + 14 + armOffset, 4, 8);
-                if (this.attacking && !this.weapon.isRanged) {
-                    const handX = x + 18 + weaponPose.offsetX;
-                    const handY = y + 16 + weaponPose.offsetY;
-                    ctx.strokeStyle = '#FFCC99';
-                    ctx.lineWidth = 4;
-                    ctx.lineCap = 'square';
-                    ctx.beginPath();
-                    ctx.moveTo(x + 18, y + 17);
-                    ctx.lineTo(handX, handY);
-                    ctx.stroke();
-                    ctx.fillRect(handX - 2, handY - 2, 4, 5);
-                } else {
-                    ctx.fillRect(x + 18, y + 14 - armOffset, 4, 8);
-                }
-
-                // 腿 (深蓝色裤子)
-                ctx.fillStyle = '#1565C0';
-                const legOffset = this.walkFrame % 2 === 0 ? 0 : 2;
-                ctx.fillRect(x + 6, y + 24, 5, 8 + legOffset);
-                ctx.fillRect(x + 13, y + 24, 5, 8 - legOffset);
-
+                this.drawHeroBody(ctx, x, y, weaponPose);
                 ctx.restore();
             }
 
@@ -2781,6 +3144,88 @@
                         detail: true,
                         hideFlexible: this.weapon.model === 'whip' && this.attacking
                     });
+                }
+                ctx.restore();
+            }
+
+            drawHeroBody(ctx, x, y, weaponPose) {
+                const step = this.walkFrame % 2;
+                const attacking = this.attacking && !this.weapon.isRanged;
+                const outline = '#10131B';
+                const skin = '#D9A27A';
+                const skinLight = '#F2C39F';
+                ctx.save();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = outline;
+                ctx.lineJoin = 'miter';
+
+                // 深红披风与行走摆幅，让人物轮廓比旧方块人更像人类冒险者。
+                ctx.fillStyle = '#4A1F2B';
+                ctx.beginPath();
+                ctx.moveTo(x + 3, y + 13);
+                ctx.lineTo(x + 9, y + 12);
+                ctx.lineTo(x + 10 - step, y + 29);
+                ctx.lineTo(x + 2, y + 27 + step);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+
+                // 长靴与腿甲。
+                ctx.fillStyle = '#202938';
+                ctx.fillRect(x + 7 - step, y + 23, 5, 8 + step);
+                ctx.fillRect(x + 14 + step, y + 23, 5, 8 - step);
+                ctx.fillStyle = '#0C111A';
+                ctx.fillRect(x + 5 - step, y + 29, 7, 3);
+                ctx.fillRect(x + 14 + step, y + 29, 7, 3);
+                ctx.fillStyle = '#68788E';
+                ctx.fillRect(x + 8 - step, y + 24, 3, 4);
+                ctx.fillRect(x + 15 + step, y + 24, 3, 4);
+
+                // 合身胸甲、皮带与肩甲。
+                ctx.fillStyle = '#253B55';
+                ctx.fillRect(x + 5, y + 12, 15, 13);
+                ctx.strokeRect(x + 5, y + 12, 15, 13);
+                ctx.fillStyle = '#446985';
+                ctx.beginPath(); ctx.moveTo(x + 7, y + 13); ctx.lineTo(x + 13, y + 17); ctx.lineTo(x + 18, y + 13); ctx.lineTo(x + 18, y + 21); ctx.lineTo(x + 7, y + 21); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#B28A45';
+                ctx.fillRect(x + 5, y + 21, 15, 3);
+                ctx.fillStyle = '#D9B85F'; ctx.fillRect(x + 12, y + 21, 3, 3);
+                ctx.fillStyle = '#6D7F91';
+                ctx.fillRect(x + 2, y + 12, 6, 5);
+                ctx.fillRect(x + 18, y + 12, 5, 5);
+
+                // 更自然的持武器手臂；近战时跟随每种武器的动作轨迹。
+                ctx.strokeStyle = '#293A4D';
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(x + 6, y + 16); ctx.lineTo(x + 3, y + 22 + (step ? -1 : 1)); ctx.stroke();
+                ctx.fillStyle = skin; ctx.fillRect(x + 1, y + 20 + (step ? -1 : 1), 4, 5);
+                const handX = attacking ? x + 18 + weaponPose.offsetX : x + 21;
+                const handY = attacking ? y + 16 + weaponPose.offsetY : y + 19 - step;
+                ctx.strokeStyle = '#293A4D'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(x + 19, y + 15); ctx.lineTo(handX, handY); ctx.stroke();
+                ctx.fillStyle = skinLight; ctx.fillRect(handX - 2, handY - 2, 4, 5);
+
+                // 颈部、下颌、鼻梁和明确眼神。
+                ctx.fillStyle = skin; ctx.fillRect(x + 10, y + 9, 7, 5);
+                ctx.fillStyle = skinLight;
+                ctx.fillRect(x + 7, y + 2, 13, 10);
+                ctx.strokeRect(x + 7, y + 2, 13, 10);
+                ctx.fillStyle = '#A86D52';
+                ctx.fillRect(x + 17, y + 7, 4, 2);
+                ctx.fillRect(x + 10, y + 11, 8, 2);
+                ctx.fillStyle = '#DCEBFF'; ctx.fillRect(x + 15, y + 5, 3, 2);
+                ctx.fillStyle = '#17202D'; ctx.fillRect(x + 17, y + 5, 2, 2);
+
+                // 深色碎发与侧鬓，不再使用一整块棕色帽子形状。
+                ctx.fillStyle = '#25202A';
+                ctx.fillRect(x + 6, y, 13, 4);
+                ctx.fillRect(x + 5, y + 2, 5, 7);
+                ctx.fillRect(x + 9, y, 4, 3);
+                ctx.fillRect(x + 18, y + 1, 4, 6);
+                ctx.fillStyle = '#4A3B47'; ctx.fillRect(x + 9, y + 1, 7, 2);
+
+                if (this.lastStandActive) {
+                    ctx.strokeStyle = '#FF5252'; ctx.globalAlpha = 0.7;
+                    ctx.strokeRect(x + 1, y - 2, this.width + 1, this.height + 3);
                 }
                 ctx.restore();
             }
@@ -2842,17 +3287,130 @@
             }
         }
 
+        function rollBirchCoinReward(random = Math.random) {
+            return 1 + Math.floor(Math.max(0, Math.min(0.999999, random())) * 5);
+        }
+
+        function awardBirchCoins(amount, x = player.x, y = player.y) {
+            const gained = Math.max(0, Math.min(5, Math.floor(amount)));
+            if (gained <= 0) return 0;
+            birchCoins += gained;
+            if (runStats) {
+                runStats.birchCoinsEarned = (runStats.birchCoinsEarned || 0) + gained;
+                if (gameMode === 'endless') runStats.endlessBirchCoinsEarned = (runStats.endlessBirchCoinsEarned || 0) + gained;
+            }
+            floatingTexts.push(new FloatingText(x + 16, y - 16, `白桦币 +${gained}`, '#FFF176', 15));
+            spawnImpactParticles(x + 16, y + 8, '#FFF176', 14, 0.75);
+            playSfx('reward');
+            announce(`获得 ${gained} 枚白桦币，当前共有 ${birchCoins} 枚。`);
+            return gained;
+        }
+
+        function recordBirchCoinSpend(amount) {
+            if (!runStats || !Number.isFinite(amount) || amount <= 0) return;
+            runStats.birchCoinsSpent = (runStats.birchCoinsSpent || 0) + amount;
+            if (gameMode === 'endless') runStats.endlessBirchCoinsSpent = (runStats.endlessBirchCoinsSpent || 0) + amount;
+        }
+
+        function recordPassiveClaim() {
+            if (!runStats) return;
+            runStats.passivesClaimed = (runStats.passivesClaimed || 0) + 1;
+            if (gameMode === 'endless') runStats.endlessPassivesClaimed = (runStats.endlessPassivesClaimed || 0) + 1;
+        }
+
+        class TreasureChest {
+            constructor(x, y, wave, isMimic = false, coinReward = rollBirchCoinReward()) {
+                this.x = x;
+                this.y = y;
+                this.width = 34;
+                this.height = 24;
+                this.wave = wave;
+                this.isMimic = Boolean(isMimic);
+                this.coinReward = coinReward;
+                this.opened = false;
+                this.alive = true;
+                this.openTimer = 0;
+                this.lastHitToken = null;
+            }
+
+            intersects(x, y, w, h) {
+                return this.alive && this.x < x + w && this.x + this.width > x &&
+                    this.y < y + h && this.y + this.height > y;
+            }
+
+            update() {
+                if (this.opened && !this.isMimic && this.openTimer > 0) {
+                    this.openTimer--;
+                    if (this.openTimer <= 0) this.alive = false;
+                }
+            }
+
+            takeDamage(hitToken = null) {
+                if (!this.alive || this.opened) return false;
+                if (hitToken && this.lastHitToken === hitToken) return false;
+                this.lastHitToken = hitToken;
+                this.opened = true;
+                if (this.isMimic) {
+                    this.alive = false;
+                    const mimic = new Enemy(this.x - 1, this.y + this.height - ENEMY_TYPES.mimic.height, this.wave, 'mimic');
+                    mimic.coinDrop = this.coinReward;
+                    enemies.push(mimic);
+                    enemiesRemaining++;
+                    totalEnemiesInWave++;
+                    spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, '#FF5252', 22, 0.9);
+                    floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 16, '宝箱怪！', '#FF8A80', 18));
+                    screenShake = Math.max(screenShake, 7);
+                    announce('宝箱突然长出利齿——它是伪装的宝箱怪。');
+                } else {
+                    this.openTimer = 90;
+                    awardBirchCoins(this.coinReward, this.x, this.y);
+                }
+                return true;
+            }
+
+            draw(ctx) {
+                if (!this.alive) return;
+                const x = this.x - camera.x;
+                const y = this.y - camera.y;
+                ctx.save();
+                ctx.globalAlpha = 0.26;
+                ctx.fillStyle = '#03070D';
+                ctx.beginPath(); ctx.ellipse(x + 17, y + 25, 20, 4, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = '#20130F';
+                ctx.lineWidth = 2;
+                ctx.fillStyle = '#62391F';
+                ctx.fillRect(x + 1, y + 10, 32, 14);
+                ctx.strokeRect(x + 1, y + 10, 32, 14);
+                ctx.save();
+                ctx.translate(x + 1, y + 10);
+                if (this.opened) ctx.rotate(-0.72);
+                ctx.fillStyle = '#85502B';
+                ctx.fillRect(0, -9, 32, 10);
+                ctx.strokeRect(0, -9, 32, 10);
+                ctx.fillStyle = '#B77B35'; ctx.fillRect(2, -7, 28, 3);
+                ctx.restore();
+                ctx.fillStyle = '#E6B94D';
+                ctx.fillRect(x + 14, y + 8, 7, 10);
+                ctx.fillStyle = '#FFF3A3'; ctx.fillRect(x + 16, y + 10, 3, 3);
+                if (!this.opened) {
+                    ctx.fillStyle = 'rgba(5,12,20,0.78)';
+                    ctx.fillRect(x - 12, y - 25, 58, 16);
+                    ctx.fillStyle = '#FFE082';
+                    ctx.font = 'bold 10px "Courier New", monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('攻击开启', x + 17, y - 13);
+                }
+                ctx.restore();
+            }
+        }
+
         // ============ 敌人类 ============
         class Enemy {
-            constructor(x, y, wave = 1, typeKey = 'zombie', variantProfile = null) {
-                const isChaos = typeKey === 'chaos';
-                const t = isChaos
-                    ? (variantProfile || createChaosProfile(wave))
-                    : (ENEMY_TYPES[typeKey] || ENEMY_TYPES.zombie);
+            constructor(x, y, wave = 1, typeKey = 'zombie') {
+                const t = ENEMY_TYPES[typeKey] || ENEMY_TYPES.zombie;
                 this.type = typeKey;
                 this.name = t.name || ENEMY_TYPES.zombie.name;
-                this.isChaos = isChaos;
-                this.chaosProfile = isChaos ? t : null;
                 this.x = x;
                 this.y = y;
                 this.width = t.width;
@@ -2860,12 +3418,17 @@
                 this.vx = 0;
                 this.vy = 0;
                 this.onGround = false;
-                const hpMultiplier = Math.pow(CONFIG.ENEMY_HP_SCALING, wave - 1);
+                const cappedWave = Math.ceil((CONFIG.MAX_ENEMIES_PER_WAVE - CONFIG.BASE_ENEMIES_PER_WAVE) / 1.35) + 1;
+                const postCapTier = Math.max(0, wave - cappedWave);
+                const postCapStrength = 1 + postCapTier * 0.025;
+                const hpMultiplier = Math.pow(CONFIG.ENEMY_HP_SCALING, wave - 1) * postCapStrength;
                 this.hp = Math.floor(t.baseHp * hpMultiplier);
                 this.maxHp = this.hp;
-                this.damage = Math.floor(t.baseDmg * Math.pow(CONFIG.ENEMY_DAMAGE_SCALING, wave - 1));
+                this.damage = Math.floor(t.baseDmg * Math.pow(CONFIG.ENEMY_DAMAGE_SCALING, wave - 1) * Math.sqrt(postCapStrength));
                 this.speed = t.speed;
                 this.color = t.color;
+                this.accent = t.accent || '#DCE775';
+                this.skill = t.skill || 'claw';
                 this.knockResist = t.knockResist;
                 this.ranged = t.ranged || false;
                 this.laser = t.laser || false;
@@ -2893,22 +3456,29 @@
                 this.leapCooldown = 55 + Math.floor(Math.random() * 45);
                 this.leapBoostFrames = 0;
                 this.leapVx = 0;
-                const endlessTier = Math.max(0, wave - CONFIG.BOSS_WAVE);
-                this.empowered = !this.isEliteType && !this.isChaos && endlessTier > 0 && Math.random() < Math.min(0.42, 0.08 + endlessTier * 0.012);
-                this.elite = this.isEliteType || this.empowered;
-                if (this.empowered) {
-                    this.maxHp = Math.floor(this.maxHp * 1.32);
-                    this.hp = this.maxHp;
-                    this.damage = Math.floor(this.damage * 1.2);
-                    this.maxShield = Math.floor(this.maxShield * 1.35);
-                    this.shield = this.maxShield;
-                    this.speed = Math.min(this.speed * 1.12, 3.1);
-                }
+                this.skillCooldown = 45 + Math.floor(Math.random() * 75);
+                this.skillTimer = 0;
+                this.skillTriggered = false;
+                this.attackAnimTimer = 0;
+                this.contactCooldown = 0;
+                this.abilityVx = 0;
+                this.abilityVxFrames = 0;
+                this.pressureStacks = 0;
+                this.pressureStackTimer = 0;
+                this.coinDrop = 0;
+                // 无尽模式不再生成随机数值变体；所有成长只由波次确定。
+                this.elite = this.isEliteType;
             }
 
             update(player) {
                 if (!this.alive) return;
                 if (gameState !== 'playing') return;
+
+                if (this.contactCooldown > 0) this.contactCooldown--;
+                if (this.attackAnimTimer > 0) this.attackAnimTimer--;
+                if (this.skillCooldown > 0) this.skillCooldown--;
+                if (this.pressureStackTimer > 0) this.pressureStackTimer--;
+                else this.pressureStacks = 0;
 
                 // 坑中自救跳跃
                 if (this.onGround && Math.random() < 0.01) {
@@ -2941,6 +3511,46 @@
                     }
                 }
 
+                // 每一种敌人都拥有可读的独立动作与技能节奏。
+                if (this.skill === 'dash' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) >= 70 && Math.abs(dx) <= 280) {
+                    this.facing = Math.sign(dx) || this.facing;
+                    this.abilityVx = this.facing * this.speed * 3.35;
+                    this.abilityVxFrames = 18;
+                    this.skillCooldown = 145;
+                    this.attackAnimTimer = 24;
+                } else if (this.skill === 'shieldBash' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 190) {
+                    this.facing = Math.sign(dx) || this.facing;
+                    this.abilityVx = this.facing * this.speed * 3.1;
+                    this.abilityVxFrames = 20;
+                    this.skillCooldown = 175;
+                    this.attackAnimTimer = 28;
+                } else if (this.skill === 'mimicBite' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 230) {
+                    this.facing = Math.sign(dx) || this.facing;
+                    this.vy = -5.5;
+                    this.abilityVx = this.facing * this.speed * 2.65;
+                    this.abilityVxFrames = 22;
+                    this.skillCooldown = 125;
+                    this.attackAnimTimer = 30;
+                } else if (this.skill === 'slam' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 125) {
+                    this.skillTimer = 34;
+                    this.skillTriggered = false;
+                    this.skillCooldown = 205;
+                    this.attackAnimTimer = 34;
+                }
+
+                if (this.skillTimer > 0) {
+                    this.skillTimer--;
+                    desiredVx = 0;
+                    if (!this.skillTriggered && this.skillTimer <= 14) {
+                        this.skillTriggered = true;
+                        screenShake = Math.max(screenShake, 7);
+                        spawnImpactParticles(this.x + this.width / 2, this.y + this.height, '#C0CA33', 18, 0.9);
+                        const closeX = Math.abs((player.x + player.width / 2) - (this.x + this.width / 2)) <= 125;
+                        const closeY = Math.abs((player.y + player.height) - (this.y + this.height)) <= 70;
+                        if (closeX && closeY) player.takeDamage(Math.round(this.damage * 1.3), 'orc-slam');
+                    }
+                }
+
                 // 跃袭尸会周期性扑向玩家，是普通怪而非精英怪。
                 if (this.leaper) {
                     if (this.leapBoostFrames > 0) {
@@ -2953,6 +3563,7 @@
                         desiredVx = this.leapVx;
                         this.leapBoostFrames = 22;
                         this.leapCooldown = 100 + Math.floor(Math.random() * 55);
+                        this.attackAnimTimer = 28;
                     }
                 }
 
@@ -2960,6 +3571,9 @@
                     this.vx = this.knockbackVx;
                     this.knockbackVx *= 0.84;
                     this.knockbackTimer--;
+                } else if (this.abilityVxFrames > 0) {
+                    this.vx = this.abilityVx;
+                    this.abilityVxFrames--;
                 } else {
                     this.vx = desiredVx;
                 }
@@ -2971,8 +3585,11 @@
                         this.shootCooldown = this.shootInterval;
                         const projSpeed = 3 + Math.random();
                         const dir = Math.sign(dx) || 1;
-                        const projectileColor = this.isChaos ? this.chaosProfile.accent : '#90CAF9';
-                        projectiles.push(new Projectile(this.x + this.width / 2, this.y + this.height / 2, dir * projSpeed, -0.5, this.damage, projectileColor));
+                        this.facing = dir;
+                        this.attackAnimTimer = 22;
+                        projectiles.push(new Projectile(this.x + this.width / 2, this.y + this.height * 0.45, dir * projSpeed, -0.45, this.damage, this.accent, 'enemy', {
+                            model: 'bow', size: 3, gravity: 0.035
+                        }));
                     }
                 }
 
@@ -3000,8 +3617,14 @@
                 }
 
                 // 与玩家碰撞检测
-                if (this.intersects(player.x, player.y, player.width, player.height)) {
-                    player.takeDamage(this.damage, this.elite ? 'elite-contact' : 'enemy-contact');
+                if (this.contactCooldown <= 0 && this.intersects(player.x, player.y, player.width, player.height)) {
+                    this.contactCooldown = this.skill === 'mimicBite' ? 42 : 54;
+                    this.attackAnimTimer = Math.max(this.attackAnimTimer, 20);
+                    const multiplier = this.skill === 'mimicBite' ? 1.3
+                        : this.skill === 'shieldBash' ? 1.2
+                            : this.leaper ? 1.15
+                                : this.ranged ? 0.7 : 1;
+                    player.takeDamage(Math.round(this.damage * multiplier), this.elite ? 'elite-contact' : `${this.skill}-contact`);
                 }
             }
 
@@ -3085,10 +3708,19 @@
                        this.y < y + h && this.y + this.height > y;
             }
 
-            takeDamage(amount, knockbackDir, knockbackForce, hitToken, knockbackFrames = 9) {
+            takeDamage(amount, knockbackDir, knockbackForce, hitToken, knockbackFrames = 9, options = {}) {
                 if (!this.alive) return false;
                 if (hitToken && this.lastHitToken === hitToken) return false;
                 if (hitToken) this.lastHitToken = hitToken;
+
+                const resolved = player.resolveOutgoingDamage(amount, this, {
+                    source: options.source || 'weapon',
+                    passiveDamage: Boolean(options.passiveDamage),
+                    canCrit: options.canCrit,
+                    noTrigger: Boolean(options.noTrigger),
+                    preResolved: Boolean(options.preResolved)
+                });
+                amount = resolved.damage;
 
                 const hpBefore = this.hp;
                 const shieldBefore = this.shield;
@@ -3105,20 +3737,34 @@
 
                 if (remainingDamage > 0) {
                     this.hp -= remainingDamage;
-                    floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 8, `-${Math.round(remainingDamage)}`, '#FFF59D', 14));
+                    floatingTexts.push(new FloatingText(
+                        this.x + this.width / 2,
+                        this.y - 8,
+                        `${resolved.critical ? '暴击 ' : ''}-${Math.round(remainingDamage)}`,
+                        resolved.critical ? '#FFEB3B' : '#FFF59D',
+                        resolved.critical ? 17 : 14
+                    ));
                     spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, this.color, 8, 0.7);
                 }
-                recordDamageDealt((shieldBefore - this.shield) + (hpBefore - Math.max(0, this.hp)));
+                const actualDamage = (shieldBefore - this.shield) + (hpBefore - Math.max(0, this.hp));
+                const died = this.hp <= 0;
+                if (died) this.alive = false;
+                recordDamageDealt(actualDamage);
+                player.onDamageDealt(actualDamage, this, {
+                    source: options.source || 'weapon',
+                    passiveDamage: Boolean(options.passiveDamage),
+                    noTrigger: Boolean(options.noTrigger)
+                });
                 this.hitTimer = 10;
                 this.knockbackVx = knockbackDir * (knockbackForce / this.knockResist);
                 this.knockbackTimer = Math.max(1, knockbackFrames);
                 this.vy = -5;
                 screenShake = Math.max(screenShake, remainingDamage > 0 ? 3.5 : 1.5);
 
-                if (this.hp <= 0) {
-                    this.alive = false;
-                    enemiesRemaining--;
+                if (died) {
+                    enemiesRemaining = Math.max(0, enemiesRemaining - 1);
                     recordKill(this);
+                    if (this.type === 'mimic') awardBirchCoins(this.coinDrop || rollBirchCoinReward(), this.x, this.y);
                 }
                 return true;
             }
@@ -3178,152 +3824,162 @@
                     y = 0;
                 }
 
-                if (this.isChaos) {
-                    this.drawChaosBody(ctx, x, y);
-                    if (this.elite) {
-                        ctx.strokeStyle = '#FFD54F';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(x + 1, y - 1, this.width - 2, this.height - 7);
-                    }
-                    ctx.restore();
-                    return;
-                }
+                this.drawDetailedEnemyBody(ctx, x, y);
+                ctx.restore();
+            }
 
-                // 身体主体
-                ctx.fillStyle = this.hitTimer > 0 ? '#FF7777' : this.color;
-                ctx.fillRect(x + 4, y, this.width - 8, this.height - 8);
+            drawDetailedEnemyBody(ctx, x, y) {
+                const attacking = this.attackAnimTimer > 0;
+                const step = this.walkFrame % 2;
+                const bob = this.onGround && Math.abs(this.vx) > 0 ? step : 0;
+                const outline = '#15131A';
+                const skin = this.hitTimer > 0 ? '#FF8A80' : this.color;
+                const accent = this.accent;
+                ctx.save();
+                ctx.translate(0, bob);
+                ctx.strokeStyle = outline;
+                ctx.lineWidth = 2;
+                ctx.lineJoin = 'miter';
 
-                // 眼睛
-                ctx.fillStyle = '#000';
-                ctx.fillRect(x + this.width / 2 - 6, y + 6, 4, 4);
-                ctx.fillRect(x + this.width / 2 + 2, y + 6, 4, 4);
-
-                // 特征
-                if (this.type === 'runner') {
-                    ctx.fillStyle = '#C5E1A5';
-                    ctx.fillRect(x + 6, y + this.height - 16, this.width - 12, 4);
+                if (this.type === 'zombie') {
+                    const clawReach = attacking ? 8 : 1;
+                    ctx.fillStyle = '#2A2430';
+                    ctx.fillRect(x + 6, y + 20, 6, 13 + step);
+                    ctx.fillRect(x + 17, y + 20, 6, 13 - step);
+                    ctx.fillStyle = '#4B3444';
+                    ctx.fillRect(x + 4, y + 12, 21, 15);
+                    ctx.strokeRect(x + 4, y + 12, 21, 15);
+                    ctx.fillStyle = skin;
+                    ctx.fillRect(x + 7, y + 2, 17, 13);
+                    ctx.strokeRect(x + 7, y + 2, 17, 13);
+                    ctx.fillStyle = '#283021';
+                    ctx.fillRect(x + 5, y, 14, 5);
+                    ctx.fillRect(x + 20, y + 3, 5, 5);
+                    ctx.fillStyle = '#F44336';
+                    ctx.fillRect(x + 18, y + 7, 3, 3);
+                    ctx.fillStyle = skin;
+                    ctx.fillRect(x + 20, y + 15, 5 + clawReach, 5);
+                    ctx.fillRect(x + 1, y + 14, 6, 12);
+                    ctx.fillStyle = '#D9E6B8';
+                    ctx.fillRect(x + 25 + clawReach, y + 15, 2, 2);
+                    ctx.fillRect(x + 25 + clawReach, y + 19, 3, 2);
+                } else if (this.type === 'runner') {
+                    const thrust = attacking ? 10 : 2;
+                    ctx.fillStyle = '#31283A';
+                    ctx.fillRect(x + 6 - step, y + 20, 5, 9);
+                    ctx.fillRect(x + 15 + step, y + 20, 5, 9);
+                    ctx.fillStyle = '#513A29';
+                    ctx.fillRect(x + 5, y + 12, 17, 11);
+                    ctx.strokeRect(x + 5, y + 12, 17, 11);
+                    ctx.fillStyle = skin;
+                    ctx.fillRect(x + 6, y + 3, 16, 12);
+                    ctx.strokeRect(x + 6, y + 3, 16, 12);
+                    ctx.beginPath(); ctx.moveTo(x + 6, y + 5); ctx.lineTo(x, y + 1); ctx.lineTo(x + 5, y + 11); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#FFEB3B'; ctx.fillRect(x + 17, y + 7, 3, 3);
+                    ctx.fillStyle = '#6C4B34'; ctx.fillRect(x + 2, y + 13, 5, 10);
+                    ctx.fillRect(x + 19, y + 13, 5 + thrust, 4);
+                    ctx.fillStyle = '#D6DCE5';
+                    ctx.beginPath(); ctx.moveTo(x + 24 + thrust, y + 13); ctx.lineTo(x + 36 + thrust, y + 15); ctx.lineTo(x + 24 + thrust, y + 18); ctx.closePath(); ctx.fill(); ctx.stroke();
                 } else if (this.type === 'tank') {
-                    ctx.fillStyle = '#3E2723';
-                    ctx.fillRect(x + 2, y + 6, this.width - 4, 6);
+                    const slam = this.skillTimer > 14;
+                    ctx.fillStyle = '#2F2831';
+                    ctx.fillRect(x + 7, y + 31, 8, 11 + step);
+                    ctx.fillRect(x + 21, y + 31, 8, 11 - step);
+                    ctx.fillStyle = '#4A3A2E';
+                    ctx.fillRect(x + 3, y + 14, 30, 21);
+                    ctx.strokeRect(x + 3, y + 14, 30, 21);
+                    ctx.fillStyle = skin;
+                    ctx.fillRect(x + 7, y + 3, 22, 15);
+                    ctx.strokeRect(x + 7, y + 3, 22, 15);
+                    ctx.fillStyle = '#E8E0B6';
+                    ctx.beginPath(); ctx.moveTo(x + 9, y + 5); ctx.lineTo(x + 4, y - 5); ctx.lineTo(x + 14, y + 3); ctx.fill(); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(x + 26, y + 5); ctx.lineTo(x + 31, y - 4); ctx.lineTo(x + 30, y + 8); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#FFB300'; ctx.fillRect(x + 21, y + 8, 4, 3);
+                    ctx.fillStyle = skin; ctx.fillRect(x, y + 16, 7, 16); ctx.fillRect(x + 29, y + 14, 7, 17);
+                    ctx.save();
+                    ctx.translate(x + 33, y + 16);
+                    ctx.rotate(slam ? -1.35 : attacking ? 0.7 : -0.25);
+                    ctx.fillStyle = '#5D4037'; ctx.fillRect(0, -3, 28, 6);
+                    ctx.fillStyle = '#30343B'; ctx.fillRect(22, -9, 13, 18); ctx.strokeRect(22, -9, 13, 18);
+                    ctx.restore();
                 } else if (this.type === 'shooter') {
-                    ctx.fillStyle = '#B3E5FC';
-                    ctx.fillRect(x + this.width - 10, y + 10, 8, 10);
+                    const draw = attacking ? 7 : 0;
+                    ctx.fillStyle = '#493C4F';
+                    ctx.fillRect(x + 7, y + 20, 5, 12 + step);
+                    ctx.fillRect(x + 16, y + 20, 5, 12 - step);
+                    ctx.fillStyle = '#3B3344'; ctx.fillRect(x + 5, y + 13, 18, 10); ctx.strokeRect(x + 5, y + 13, 18, 10);
+                    ctx.fillStyle = skin;
+                    ctx.beginPath(); ctx.arc(x + 14, y + 8, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#16141A'; ctx.fillRect(x + 9, y + 6, 3, 4); ctx.fillRect(x + 16, y + 6, 3, 4); ctx.fillRect(x + 12, y + 11, 5, 2);
+                    ctx.strokeStyle = '#8D6E63'; ctx.lineWidth = 3;
+                    ctx.beginPath(); ctx.arc(x + 25, y + 16, 13, -1.3, 1.3); ctx.stroke();
+                    ctx.strokeStyle = '#E0E0E0'; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.moveTo(x + 28, y + 4); ctx.lineTo(x + 18 - draw, y + 16); ctx.lineTo(x + 28, y + 28); ctx.stroke();
+                    ctx.fillStyle = accent; ctx.fillRect(x + 17 - draw, y + 15, 22 + draw, 2);
                 } else if (this.type === 'leaper') {
-                    ctx.fillStyle = '#FFE082';
-                    ctx.fillRect(x + 3, y + this.height - 10, this.width - 6, 4);
-                    ctx.fillRect(x + this.width / 2 - 2, y + 4, 4, 8);
+                    const lunge = attacking ? 5 : 0;
+                    ctx.fillStyle = skin;
+                    ctx.beginPath(); ctx.ellipse(x + 15, y + 12, 11 + lunge * 0.4, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.beginPath(); ctx.arc(x + 24 + lunge, y + 12, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.strokeStyle = outline; ctx.lineWidth = 3;
+                    const legPairs = [[4, 0], [8, 5], [15, 8], [21, 5]];
+                    legPairs.forEach(([ly, spread], index) => {
+                        ctx.beginPath(); ctx.moveTo(x + 12, y + 9 + index * 2); ctx.lineTo(x + spread - 4, y + ly - step); ctx.lineTo(x + spread - 8, y + 18 + index); ctx.stroke();
+                        ctx.beginPath(); ctx.moveTo(x + 18, y + 9 + index * 2); ctx.lineTo(x + 28 + spread, y + ly + step); ctx.lineTo(x + 33 + spread, y + 18 + index); ctx.stroke();
+                    });
+                    ctx.fillStyle = '#FF5252'; ctx.fillRect(x + 23 + lunge, y + 9, 3, 3); ctx.fillRect(x + 27 + lunge, y + 9, 3, 3);
+                    ctx.fillStyle = '#F5F5F5';
+                    ctx.beginPath(); ctx.moveTo(x + 26 + lunge, y + 15); ctx.lineTo(x + 28 + lunge, y + 22); ctx.lineTo(x + 30 + lunge, y + 15); ctx.fill();
                 } else if (this.type === 'warden') {
-                    ctx.fillStyle = '#80DEEA';
-                    ctx.fillRect(x + 2, y + 7, 7, this.height - 14);
-                    ctx.fillStyle = '#263238';
-                    ctx.fillRect(x + 9, y + 11, this.width - 14, 5);
+                    const bash = this.abilityVxFrames > 0 || attacking;
+                    ctx.fillStyle = '#202936'; ctx.fillRect(x + 8, y + 28, 7, 11 + step); ctx.fillRect(x + 20, y + 28, 7, 11 - step);
+                    ctx.fillStyle = skin; ctx.fillRect(x + 6, y + 11, 23, 21); ctx.strokeRect(x + 6, y + 11, 23, 21);
+                    ctx.fillStyle = '#18202B'; ctx.fillRect(x + 7, y + 2, 21, 13); ctx.strokeRect(x + 7, y + 2, 21, 13);
+                    ctx.fillStyle = accent; ctx.fillRect(x + 19, y + 7, 6, 3);
+                    ctx.fillStyle = '#273949'; ctx.fillRect(x + (bash ? 22 : 0), y + 12, 12, 23); ctx.strokeRect(x + (bash ? 22 : 0), y + 12, 12, 23);
+                    ctx.fillStyle = accent; ctx.fillRect(x + (bash ? 24 : 2), y + 17, 8, 3); ctx.fillRect(x + (bash ? 27 : 5), y + 14, 3, 15);
+                    ctx.fillStyle = '#AAB7C4'; ctx.fillRect(x + 28, y + 16, 3, 18);
                 } else if (this.type === 'prism') {
-                    ctx.fillStyle = '#E1BEE7';
+                    const pulse = this.laserCharge > 0 || this.laserFire > 0;
+                    ctx.globalAlpha *= 0.88;
+                    ctx.fillStyle = skin;
                     ctx.beginPath();
-                    ctx.moveTo(x + this.width / 2, y + 2);
-                    ctx.lineTo(x + this.width - 4, y + this.height / 2);
-                    ctx.lineTo(x + this.width / 2, y + this.height - 6);
-                    ctx.lineTo(x + 4, y + this.height / 2);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.fillStyle = '#FF5252';
-                    ctx.fillRect(x + this.width / 2 - 3, y + 9, 6, 6);
+                    ctx.moveTo(x + 15, y); ctx.quadraticCurveTo(x + 29, y + 7, x + 27, y + 22);
+                    ctx.lineTo(x + 30, y + 34); ctx.lineTo(x + 22, y + 30); ctx.lineTo(x + 15, y + 36);
+                    ctx.lineTo(x + 8, y + 30); ctx.lineTo(x, y + 34); ctx.lineTo(x + 4, y + 20);
+                    ctx.quadraticCurveTo(x + 2, y + 6, x + 15, y); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#111827'; ctx.fillRect(x + 8, y + 10, 4, 5); ctx.fillRect(x + 19, y + 10, 4, 5);
+                    ctx.fillStyle = pulse ? '#FF4081' : accent;
+                    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = pulse ? 14 : 6;
+                    ctx.beginPath(); ctx.arc(x + 16, y + 20, pulse ? 6 : 4, 0, Math.PI * 2); ctx.fill();
+                    ctx.shadowBlur = 0;
+                } else if (this.type === 'mimic') {
+                    const open = attacking || this.abilityVxFrames > 0;
+                    ctx.fillStyle = '#2A1B18'; ctx.fillRect(x + 3, y + 17, 31, 13); ctx.strokeRect(x + 3, y + 17, 31, 13);
+                    ctx.fillStyle = skin;
+                    ctx.save(); ctx.translate(x + 3, y + 17); ctx.rotate(open ? -0.42 : -0.06);
+                    ctx.fillRect(0, -9, 31, 10); ctx.strokeRect(0, -9, 31, 10);
+                    ctx.fillStyle = accent; ctx.fillRect(13, -8, 6, 8); ctx.restore();
+                    ctx.fillStyle = '#F5F0D0';
+                    for (let tooth = 0; tooth < 6; tooth++) {
+                        const tx = x + 5 + tooth * 5;
+                        ctx.beginPath(); ctx.moveTo(tx, y + 17); ctx.lineTo(tx + 2, y + (open ? 23 : 20)); ctx.lineTo(tx + 4, y + 17); ctx.fill();
+                    }
+                    ctx.fillStyle = '#FF1744'; ctx.fillRect(x + 8, y + 20, 4, 4); ctx.fillRect(x + 25, y + 20, 4, 4);
+                    ctx.fillStyle = '#4E342E'; ctx.fillRect(x + 6 - step, y + 28, 7, 4); ctx.fillRect(x + 25 + step, y + 28, 7, 4);
                 }
 
                 if (this.elite) {
                     ctx.strokeStyle = '#FFD54F';
                     ctx.lineWidth = 2;
-                    ctx.strokeRect(x + 1, y - 1, this.width - 2, this.height - 7);
+                    ctx.strokeRect(x + 1, y - 2, this.width - 2, this.height + 1);
                 }
-
+                if (this.pressureStacks > 0) {
+                    ctx.strokeStyle = '#FF7043';
+                    ctx.globalAlpha = 0.4 + Math.min(0.5, this.pressureStacks * 0.06);
+                    ctx.beginPath(); ctx.arc(x + this.width / 2, y + this.height / 2, this.width * 0.7, 0, Math.PI * 2); ctx.stroke();
+                }
                 ctx.restore();
-            }
-
-            drawChaosBody(ctx, x, y) {
-                const profile = this.chaosProfile;
-                const bodyTop = y + 3;
-                const bodyHeight = this.height - 10;
-                const pulse = this.walkFrame % 2;
-
-                ctx.save();
-                ctx.globalAlpha = 0.22;
-                ctx.fillStyle = profile.accent;
-                const glitchOffset = 2 + profile.pattern;
-                ctx.fillRect(x - glitchOffset, bodyTop + 5, 4, Math.max(5, bodyHeight - 9));
-                ctx.fillRect(x + this.width + glitchOffset - 3, bodyTop + 9, 3, Math.max(4, bodyHeight - 16));
-                ctx.restore();
-
-                ctx.fillStyle = this.hitTimer > 0 ? '#FF7777' : this.color;
-                ctx.strokeStyle = profile.accent;
-                ctx.lineWidth = 2;
-                if (profile.shape === 0) {
-                    ctx.fillRect(x + 3, bodyTop, this.width - 6, bodyHeight);
-                    ctx.strokeRect(x + 4, bodyTop + 1, this.width - 8, bodyHeight - 2);
-                } else if (profile.shape === 1) {
-                    ctx.beginPath();
-                    ctx.moveTo(x + this.width / 2, bodyTop - 2);
-                    ctx.lineTo(x + this.width - 2, bodyTop + bodyHeight * 0.42);
-                    ctx.lineTo(x + this.width * 0.72, bodyTop + bodyHeight);
-                    ctx.lineTo(x + this.width * 0.28, bodyTop + bodyHeight);
-                    ctx.lineTo(x + 2, bodyTop + bodyHeight * 0.42);
-                    ctx.closePath();
-                    ctx.fill();
-                    ctx.stroke();
-                } else if (profile.shape === 2) {
-                    ctx.beginPath();
-                    ctx.ellipse(x + this.width / 2, bodyTop + bodyHeight / 2, this.width * 0.44, bodyHeight * 0.52, 0, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.stroke();
-                } else {
-                    const gap = 2 + pulse;
-                    ctx.fillRect(x + 2, bodyTop + 2, this.width * 0.45 - gap, bodyHeight - 3);
-                    ctx.fillRect(x + this.width * 0.55 + gap, bodyTop - 1, this.width * 0.43 - gap, bodyHeight - 2);
-                    ctx.fillStyle = profile.accent;
-                    ctx.fillRect(x + this.width / 2 - 2, bodyTop + 4, 4, bodyHeight - 8);
-                }
-
-                ctx.fillStyle = profile.accent;
-                if (profile.pattern === 0) {
-                    ctx.fillRect(x + 5, bodyTop + bodyHeight * 0.58, this.width - 10, 3);
-                } else if (profile.pattern === 1) {
-                    for (let stripe = 0; stripe < 3; stripe++) {
-                        ctx.fillRect(x + 5 + stripe * 5, bodyTop + 4, 2, Math.max(4, bodyHeight - 8));
-                    }
-                } else if (profile.pattern === 2) {
-                    ctx.beginPath();
-                    ctx.arc(x + this.width / 2, bodyTop + bodyHeight * 0.62, Math.max(3, this.width * 0.13), 0, Math.PI * 2);
-                    ctx.fill();
-                } else {
-                    ctx.fillRect(x + 4, bodyTop + 5, 5, 5);
-                    ctx.fillRect(x + this.width - 9, bodyTop + bodyHeight - 10, 5, 5);
-                }
-
-                for (let horn = 0; horn < profile.hornCount; horn++) {
-                    const hornX = profile.hornCount === 1
-                        ? x + this.width / 2
-                        : x + this.width * (0.3 + horn * 0.4);
-                    ctx.beginPath();
-                    ctx.moveTo(hornX - 4, bodyTop + 1);
-                    ctx.lineTo(hornX, bodyTop - 8 - horn * 2);
-                    ctx.lineTo(hornX + 4, bodyTop + 1);
-                    ctx.closePath();
-                    ctx.fill();
-                }
-
-                ctx.fillStyle = profile.eyeColor;
-                ctx.shadowColor = profile.eyeColor;
-                ctx.shadowBlur = 6;
-                const eyeGap = this.width / (profile.eyeCount + 1);
-                for (let eye = 0; eye < profile.eyeCount; eye++) {
-                    const eyeX = x + eyeGap * (eye + 1);
-                    ctx.fillRect(eyeX - 2, bodyTop + 7 + (eye % 2) * 2, 4, 4);
-                }
-                ctx.shadowBlur = 0;
-
-                ctx.fillStyle = profile.accent;
-                const footY = y + this.height - 7;
-                ctx.fillRect(x + 3 + pulse, footY, Math.max(5, this.width * 0.28), 7);
-                ctx.fillRect(x + this.width * 0.64 - pulse, footY, Math.max(5, this.width * 0.28), 7);
             }
 
             drawLaser(ctx, x, y) {
@@ -3387,12 +4043,7 @@
                     ctx.fillRect(x, barY - 5, barWidth * shieldPct, 3);
                 }
 
-                if (this.isChaos) {
-                    ctx.fillStyle = this.chaosProfile.accent;
-                    ctx.font = 'bold 8px "Courier New", monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(this.name, x + barWidth / 2, barY - (this.maxShield > 0 ? 9 : 4));
-                } else if (this.isEliteType) {
+                if (this.isEliteType) {
                     ctx.fillStyle = '#FFD54F';
                     ctx.font = 'bold 8px "Courier New", monospace';
                     ctx.textAlign = 'center';
@@ -3583,22 +4234,37 @@
                     this.y < y + h && this.y + this.height > y;
             }
 
-            takeDamage(amount, knockbackDir, knockbackForce, hitToken, knockbackFrames = 8) {
+            takeDamage(amount, knockbackDir, knockbackForce, hitToken, knockbackFrames = 8, options = {}) {
                 if (!this.alive) return false;
                 if (hitToken && this.lastHitToken === hitToken) return false;
                 if (hitToken) this.lastHitToken = hitToken;
+                const resolved = player.resolveOutgoingDamage(amount, this, {
+                    source: options.source || 'weapon',
+                    passiveDamage: Boolean(options.passiveDamage),
+                    canCrit: options.canCrit,
+                    noTrigger: Boolean(options.noTrigger),
+                    preResolved: Boolean(options.preResolved)
+                });
+                amount = resolved.damage;
                 const hpBefore = this.hp;
                 this.hp -= amount;
-                recordDamageDealt(hpBefore - Math.max(0, this.hp));
+                const actualDamage = hpBefore - Math.max(0, this.hp);
+                const died = this.hp <= 0;
+                if (died) this.alive = false;
+                recordDamageDealt(actualDamage);
+                player.onDamageDealt(actualDamage, this, {
+                    source: options.source || 'weapon',
+                    passiveDamage: Boolean(options.passiveDamage),
+                    noTrigger: Boolean(options.noTrigger)
+                });
                 this.hitTimer = 12;
                 this.knockbackVx = Math.max(-5, Math.min(5, this.knockbackVx + knockbackDir * (knockbackForce / this.knockResist)));
                 this.knockbackTimer = Math.max(1, knockbackFrames);
                 this.vy = -3;
                 spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, '#A5D6A7', 12, 0.8);
-                floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 10, `-${Math.round(amount)}`, '#FFF59D', 16));
+                floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 10, `${resolved.critical ? '暴击 ' : ''}-${Math.round(amount)}`, resolved.critical ? '#FFEB3B' : '#FFF59D', resolved.critical ? 19 : 16));
                 screenShake = Math.max(screenShake, 4);
-                if (this.hp <= 0) {
-                    this.alive = false;
+                if (died) {
                     enemiesRemaining = 0;
                     recordKill(this, true);
                 }
@@ -3692,14 +4358,11 @@
 
                 ctx.restore();
 
-                // 血条
-                this.drawHealthBar(ctx, screenX, screenY);
             }
 
-            drawHealthBar(ctx, x, y) {
+            drawHealthBar(ctx, barY = 52) {
                 const barWidth = 200;
                 const barX = CONFIG.CANVAS_WIDTH / 2 - barWidth / 2;
-                const barY = 20;
                 ctx.save();
                 ctx.fillStyle = 'rgba(0,0,0,0.6)';
                 ctx.fillRect(barX, barY, barWidth, 16);
@@ -3920,9 +4583,9 @@
 
             // 左侧信息面板，保证亮色群系中的文字对比度
             ctx.fillStyle = 'rgba(2, 9, 18, 0.76)';
-            ctx.fillRect(8, 44, 224, 88);
+            ctx.fillRect(8, 44, 248, 128);
             ctx.strokeStyle = 'rgba(137, 190, 230, 0.38)';
-            ctx.strokeRect(8, 44, 224, 88);
+            ctx.strokeRect(8, 44, 248, 128);
 
             // 波次信息
             ctx.fillStyle = '#FFF';
@@ -3948,6 +4611,12 @@
             ctx.font = '12px "Courier New", monospace';
             const threat = Math.pow(CONFIG.ENEMY_HP_SCALING, Math.max(0, currentWave - 1)).toFixed(1);
             ctx.fillText(`击杀 ${killCount} · 威胁 x${threat}`, 16, 122);
+            ctx.fillStyle = '#FFF176';
+            ctx.font = 'bold 13px "Courier New", monospace';
+            ctx.fillText(`◈ 白桦币 ${birchCoins}`, 16, 143);
+            ctx.fillStyle = '#B3E5FC';
+            ctx.font = '12px "Courier New", monospace';
+            ctx.fillText(`推进 ${mapTravelDirection > 0 ? '左 → 右' : '右 → 左'} · 怪物上限 ${CONFIG.MAX_ENEMIES_PER_WAVE}`, 16, 162);
             
             // 当前武器信息
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
@@ -3986,15 +4655,63 @@
                 ctx.fillText(`招式: ${player.weapon.attackProfile.name} · 间隔 ${(player.weapon.attackProfile.cooldown / 60).toFixed(2)}s`, CONFIG.CANVAS_WIDTH - 214, 81);
             }
 
-            // Boss提示
+            drawPassiveHud();
             if (activeBoss && activeBoss.alive) {
+                const bossBarY = touchMode ? 114 : 52;
+                activeBoss.drawHealthBar(ctx, bossBarY);
                 ctx.fillStyle = '#FFB300';
                 ctx.font = 'bold 14px "Courier New", monospace';
                 ctx.textAlign = 'center';
                 ctx.strokeStyle = '#241200';
                 ctx.lineWidth = 4;
-                ctx.strokeText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, 52);
-                ctx.fillText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, 52);
+                ctx.strokeText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
+                ctx.fillText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
+            }
+        }
+
+        function drawPassiveHud() {
+            const startX = 270;
+            // 触屏顶部中央需为 DOM 暂停键预留完整的视觉通道。
+            const y = touchMode ? 72 : 10;
+            const width = 105;
+            const height = 34;
+            for (let index = 0; index < 4; index++) {
+                const x = startX + index * 112;
+                const entry = player.passives[index];
+                ctx.fillStyle = 'rgba(3, 9, 18, 0.78)';
+                ctx.fillRect(x, y, width, height);
+                const def = entry ? PASSIVE_BY_ID[entry.id] : null;
+                const tier = def ? PASSIVE_TIERS[def.tier] : null;
+                ctx.strokeStyle = tier?.color || 'rgba(130, 150, 175, 0.35)';
+                ctx.lineWidth = entry ? 2 : 1;
+                ctx.strokeRect(x, y, width, height);
+                ctx.textAlign = 'center';
+                if (!entry) {
+                    ctx.fillStyle = '#607D8B';
+                    ctx.font = '10px "Courier New", monospace';
+                    ctx.fillText(`被动槽 ${index + 1}`, x + width / 2, y + 21);
+                    continue;
+                }
+                ctx.fillStyle = tier.color;
+                ctx.font = 'bold 10px "Courier New", monospace';
+                const suffix = def.mode === 'stack' ? ` Lv.${entry.level}` : def.mode === 'quest' ? ` ${entry.stage}/3` : '';
+                ctx.fillText(`${def.name}${suffix}`, x + width / 2, y + 14, width - 8);
+                if (def.mode === 'quest') {
+                    const thresholds = def.relativeToMaxHp
+                        ? def.questThresholds.map(value => value * player.maxHp)
+                        : def.questThresholds;
+                    const target = thresholds[Math.min(entry.stage, thresholds.length - 1)] || 1;
+                    const previous = entry.stage > 0 ? thresholds[entry.stage - 1] : 0;
+                    const progress = entry.stage >= thresholds.length ? 1 : Math.max(0, Math.min(1, (entry.progress - previous) / Math.max(1, target - previous)));
+                    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+                    ctx.fillRect(x + 7, y + 22, width - 14, 5);
+                    ctx.fillStyle = tier.color;
+                    ctx.fillRect(x + 7, y + 22, (width - 14) * progress, 5);
+                } else {
+                    ctx.fillStyle = '#90A4AE';
+                    ctx.font = '9px "Courier New", monospace';
+                    ctx.fillText(def.mode === 'stack' ? `可升级 ${entry.level}/${def.maxLevel}` : '唯一被动', x + width / 2, y + 28);
+                }
             }
         }
 
@@ -4021,6 +4738,10 @@
         }
 
         function prepareWaveRewards() {
+            if (player.weapon?.rarity === 'LEGENDARY') {
+                openBirchShop();
+                return;
+            }
             gameState = 'reward';
             syncTouchControlsVisibility();
             rewardQueue = ['enchant'];
@@ -4029,6 +4750,174 @@
                 : currentWave % 3 === 0;
             if (grantsWeaponChoice) rewardQueue.unshift('weapon');
             openNextReward();
+        }
+
+        function resetShopState() {
+            shopView = 'menu';
+            shopChoices = [];
+            shopPackTier = null;
+            shopRefreshAvailable = false;
+            shopFragmentClaimed = false;
+            shopPage = 0;
+            pendingPassive = null;
+            shopMessage = '';
+        }
+
+        function openBirchShop() {
+            gameState = 'reward';
+            currentRewardType = 'shop';
+            rewardQueue = [];
+            weaponChoices = [];
+            enchantChoices = [];
+            weaponRewardRefreshAvailable = false;
+            resetShopState();
+            syncTouchControlsVisibility();
+            announce(`已持有传说武器，固定开启白桦商店。当前有 ${birchCoins} 枚白桦币。`);
+        }
+
+        function getAllLegendaryWeapons() {
+            return WEAPON_DATABASE.LEGENDARY.map(data => new Weapon(data, 'LEGENDARY'));
+        }
+
+        function setShopMessage(message) {
+            shopMessage = message;
+            if (message) announce(message);
+        }
+
+        function openShopWeaponView() {
+            if (birchCoins < 2) {
+                setShopMessage('白桦币不足：更换任意传说武器需要 2 枚。');
+                return false;
+            }
+            shopView = 'weapon';
+            shopChoices = getAllLegendaryWeapons();
+            shopPage = 0;
+            shopMessage = '全部传说武器均可选择，每次更换消耗 2 枚。';
+            return true;
+        }
+
+        function openShopFragmentView() {
+            if (shopFragmentClaimed) {
+                setShopMessage('本次白桦商店的免费碎片已经抽取。');
+                return false;
+            }
+            shopFragmentClaimed = true;
+            shopView = 'fragment';
+            shopChoices = generateEnchantChoices(3, player.weapon);
+            shopMessage = '免费碎片 3 选 1；返回视为放弃，本次不再重抽。';
+            return true;
+        }
+
+        function openShopPassivePack(tier) {
+            const tierInfo = PASSIVE_TIERS[tier];
+            if (!tierInfo) return false;
+            const choices = generatePassiveChoices(tier, 3);
+            if (choices.length === 0) {
+                setShopMessage(`${tierInfo.name}被动均已拥有或升满。`);
+                return false;
+            }
+            if (birchCoins < tierInfo.cost) {
+                setShopMessage(`白桦币不足：${tierInfo.name}技能包需要 ${tierInfo.cost} 枚。`);
+                return false;
+            }
+            birchCoins -= tierInfo.cost;
+            recordBirchCoinSpend(tierInfo.cost);
+            shopView = 'passive';
+            shopPackTier = tier;
+            shopChoices = choices;
+            shopRefreshAvailable = true;
+            pendingPassive = null;
+            shopMessage = `${tierInfo.name}技能包：3 选 1，可全部刷新一次，也可放弃（不退款）。`;
+            return true;
+        }
+
+        function refreshShopPassivePack() {
+            if (shopView !== 'passive' || !shopPackTier || !shopRefreshAvailable) {
+                setShopMessage('本技能包的刷新机会已经使用。');
+                return false;
+            }
+            const previousIds = shopChoices.map(choice => choice.id);
+            const refreshed = generatePassiveChoices(shopPackTier, 3, previousIds);
+            if (refreshed.length === 0) {
+                setShopMessage('没有可替换的新被动，保留当前选项。');
+                return false;
+            }
+            shopChoices = refreshed;
+            shopRefreshAvailable = false;
+            shopMessage = '技能包已全部刷新，本包不再提供第二次刷新。';
+            return true;
+        }
+
+        function buyShopLegendary(pageIndex) {
+            const absoluteIndex = shopPage * 3 + pageIndex;
+            const weapon = shopChoices[absoluteIndex];
+            if (!weapon || birchCoins < 2) return false;
+            birchCoins -= 2;
+            if (runStats) {
+                recordBirchCoinSpend(2);
+                runStats.weaponsClaimed++;
+                if (gameMode === 'endless') runStats.endlessWeaponsClaimed++;
+            }
+            player.setWeapon(weapon);
+            shopView = 'menu';
+            shopChoices = [];
+            shopMessage = `已花费 2 枚白桦币，更换为 ${weapon.name}。`;
+            announce(shopMessage);
+            return true;
+        }
+
+        function claimShopFragment(index) {
+            const fragment = shopChoices[index];
+            if (shopView !== 'fragment' || !fragment) return false;
+            applyEnchantment(fragment);
+            runStats.fragmentsClaimed++;
+            if (gameMode === 'endless') runStats.endlessFragmentsClaimed++;
+            shopView = 'menu';
+            shopChoices = [];
+            shopMessage = `获得 ${fragment.name}。`;
+            announce(shopMessage);
+            return true;
+        }
+
+        function chooseShopPassive(index) {
+            const def = shopChoices[index];
+            if (shopView !== 'passive' || !def) return false;
+            const result = player.addOrUpgradePassive(def);
+            if (result.needsReplacement) {
+                pendingPassive = def;
+                shopView = 'replace';
+                shopMessage = '四个被动槽已满：选择一个旧被动替换，或放弃新被动。';
+                return true;
+            }
+            if (!result.applied) return false;
+            recordPassiveClaim();
+            shopView = 'menu';
+            shopChoices = [];
+            shopMessage = result.upgraded ? `${def.name} 已升级。` : `获得${PASSIVE_TIERS[def.tier].name}被动：${def.name}。`;
+            announce(shopMessage);
+            return true;
+        }
+
+        function replaceShopPassive(index) {
+            if (shopView !== 'replace' || !pendingPassive) return false;
+            const old = player.passives[index];
+            if (!old || !player.replacePassive(index, pendingPassive)) return false;
+            const oldName = PASSIVE_BY_ID[old.id]?.name || '旧被动';
+            const newName = pendingPassive.name;
+            recordPassiveClaim();
+            pendingPassive = null;
+            shopView = 'menu';
+            shopChoices = [];
+            shopMessage = `已用 ${newName} 替换 ${oldName}。`;
+            announce(shopMessage);
+            return true;
+        }
+
+        function leaveBirchShop() {
+            if (currentRewardType !== 'shop') return false;
+            resetShopState();
+            startNextWave();
+            return true;
         }
 
         function openNextReward() {
@@ -4108,6 +4997,7 @@
         function startNextWave() {
             currentWave++;
             gameState = 'playing';
+            canvas.style.cursor = 'crosshair';
             syncTouchControlsVisibility();
             clearCombatTransients(true);
             spawnEnemiesForWave();
@@ -4129,6 +5019,7 @@
             gameMode = 'story';
             currentWave = 1;
             killCount = 0;
+            birchCoins = 0;
             gameStartTime = Date.now();
             gameEndTime = null;
             winCode = '';
@@ -4143,6 +5034,7 @@
             weaponChoices = [];
             enchantChoices = [];
             rewardQueue = [];
+            resetShopState();
             syncTouchControlsVisibility();
             spawnEnemiesForWave();
         }
@@ -4154,17 +5046,23 @@
             beginEndlessStats(Date.now());
             clearCombatTransients(true);
             player.hp = player.maxHp;
-            gameState = 'reward';
-            syncTouchControlsVisibility();
-            rewardQueue = ['enchant'];
-            openNextReward();
+            if (player.weapon?.rarity === 'LEGENDARY') {
+                openBirchShop();
+            } else {
+                gameState = 'reward';
+                syncTouchControlsVisibility();
+                rewardQueue = ['enchant'];
+                openNextReward();
+            }
             startMusic(currentBiome.musicKey);
         }
 
         function clearInputState() {
             Object.keys(keys).forEach(key => { keys[key] = false; });
-            mousePressed = false;
+            touchAttackPointerIds.clear();
+            canvasAttackPointerIds.clear();
             Object.keys(touchActive).forEach(key => { touchActive[key] = false; });
+            syncPointerAttackState();
         }
 
         function clearCombatTransients(resetInvincibility = true) {
@@ -4172,6 +5070,7 @@
             particles.length = 0;
             floatingTexts.length = 0;
             activeBoss = null;
+            treasureChest = null;
             enemies = [];
             waveCompletionHandled = false;
             screenShake = 0;
@@ -4199,6 +5098,7 @@
             currentWave = 0;
             gameMode = 'story';
             killCount = 0;
+            birchCoins = 0;
             runStats = createRunStats('story');
             lastRunSummary = null;
             gameState = 'title';
@@ -4209,6 +5109,7 @@
             rewardQueue = [];
             currentRewardType = 'weapon';
             weaponRewardRefreshAvailable = false;
+            resetShopState();
             player.hp = player.maxHp;
             resetPauseForStateTransition();
             disableTouchMode();
@@ -4217,6 +5118,10 @@
 
         // ============ 绘制奖励界面 ============
         function drawRewardScreen() {
+            if (currentRewardType === 'shop') {
+                drawBirchShop();
+                return;
+            }
             // 半透明背景
             ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
             ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
@@ -4272,7 +5177,7 @@
                     ctx.fillStyle = weapon.color;
                     ctx.font = 'bold 14px "Courier New", monospace';
                     ctx.textAlign = 'center';
-                    ctx.fillText(`[ ${weapon.rarityName} ]`, cardX + cardWidth / 2, cardY + 30);
+                    ctx.fillText(`[ ${index + 1} · ${weapon.rarityName} ]`, cardX + cardWidth / 2, cardY + 30);
 
                     // 武器名称
                     ctx.fillStyle = '#FFF';
@@ -4308,7 +5213,7 @@
                     ctx.fillStyle = '#FFD54F';
                     ctx.font = 'bold 16px "Courier New", monospace';
                     ctx.textAlign = 'center';
-                    ctx.fillText(`[ 永久碎片 ]`, cardX + cardWidth / 2, cardY + 30);
+                    ctx.fillText(`[ ${index + 1} · 永久碎片 ]`, cardX + cardWidth / 2, cardY + 30);
 
                     ctx.fillStyle = '#FFF';
                     ctx.font = 'bold 20px "Courier New", monospace';
@@ -4390,6 +5295,215 @@
             ctx.restore();
         }
 
+        function getShopChoiceRects(count = 3) {
+            const width = 250;
+            const height = 280;
+            const gap = 30;
+            const startX = (CONFIG.CANVAS_WIDTH - (width * count + gap * (count - 1))) / 2;
+            return Array.from({ length: count }, (_, index) => ({ x: startX + index * (width + gap), y: 148, w: width, h: height }));
+        }
+
+        function drawWrappedCanvasText(text, x, y, maxChars = 16, lineHeight = 18, maxLines = 3) {
+            const chars = [...String(text || '')];
+            const lines = [];
+            while (chars.length && lines.length < maxLines) lines.push(chars.splice(0, maxChars).join(''));
+            if (chars.length && lines.length) lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, Math.max(1, maxChars - 1))}…`;
+            lines.forEach((line, index) => ctx.fillText(line, x, y + index * lineHeight));
+        }
+
+        function drawShopAction(rect, label, color = '#90CAF9', disabled = false) {
+            const hovered = !disabled && isInsideButton(mouseX, mouseY, rect);
+            ctx.save();
+            ctx.globalAlpha = disabled ? 0.4 : 1;
+            ctx.fillStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(3,11,21,0.92)';
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = hovered ? 3 : 2;
+            ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 13px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(label, rect.x + rect.w / 2, rect.y + 30, rect.w - 12);
+            ctx.restore();
+        }
+
+        function drawShopMenuButton(rect, title, detail, cost, color, disabled = false) {
+            const hovered = !disabled && isInsideButton(mouseX, mouseY, rect);
+            ctx.save();
+            ctx.globalAlpha = disabled ? 0.44 : 1;
+            ctx.fillStyle = hovered ? 'rgba(255,255,255,0.16)' : 'rgba(4,13,24,0.88)';
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = hovered ? 4 : 2;
+            ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.textAlign = 'left';
+            ctx.fillStyle = color;
+            ctx.font = 'bold 17px "Courier New", monospace';
+            ctx.fillText(title, rect.x + 14, rect.y + 29, rect.w - 80);
+            ctx.fillStyle = '#B0BEC5';
+            ctx.font = '11px "Courier New", monospace';
+            ctx.fillText(detail, rect.x + 14, rect.y + 55, rect.w - 24);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = cost === 0 ? '#A5D6A7' : '#FFF176';
+            ctx.font = 'bold 16px "Courier New", monospace';
+            ctx.fillText(cost === null ? '→' : `${cost} ◈`, rect.x + rect.w - 14, rect.y + 30);
+            ctx.restore();
+        }
+
+        function drawBirchShop() {
+            ctx.save();
+            ctx.fillStyle = 'rgba(1, 5, 12, 0.91)';
+            ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, CONFIG.CANVAS_HEIGHT);
+            const header = ctx.createLinearGradient(0, 0, CONFIG.CANVAS_WIDTH, 0);
+            header.addColorStop(0, '#6D4C1E');
+            header.addColorStop(0.5, '#E7B83C');
+            header.addColorStop(1, '#6D4C1E');
+            ctx.fillStyle = header;
+            ctx.fillRect(0, 0, CONFIG.CANVAS_WIDTH, 8);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#FFF3B0';
+            ctx.font = 'bold 30px "Courier New", monospace';
+            ctx.fillText('白桦商店', CONFIG.CANVAS_WIDTH / 2, 54);
+            ctx.fillStyle = '#FFF176';
+            ctx.font = 'bold 17px "Courier New", monospace';
+            ctx.fillText(`◈ ${birchCoins} 枚白桦币`, CONFIG.CANVAS_WIDTH / 2, 82);
+            ctx.fillStyle = '#B0BEC5';
+            ctx.font = '12px "Courier New", monospace';
+            ctx.fillText(`当前：${player.weapon.name} · 传说武器持有者不再进入普通武器/碎片奖励页`, CONFIG.CANVAS_WIDTH / 2, 105);
+
+            if (shopView === 'menu') drawBirchShopMenu();
+            else if (shopView === 'weapon') drawBirchShopWeapons();
+            else if (shopView === 'fragment') drawBirchShopFragments();
+            else if (shopView === 'passive') drawBirchShopPassives();
+            else if (shopView === 'replace') drawBirchShopReplacement();
+
+            if (shopMessage) {
+                ctx.fillStyle = 'rgba(3,10,18,0.9)';
+                ctx.fillRect(70, 430, 820, 24);
+                ctx.fillStyle = '#CFD8DC';
+                ctx.font = '12px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(shopMessage, CONFIG.CANVAS_WIDTH / 2, 447, 800);
+            }
+            ctx.restore();
+        }
+
+        function drawBirchShopMenu() {
+            drawShopMenuButton(SHOP_MENU_BUTTONS.weapon, '[1] 全部传说武器', '任意更换一件', 2, '#FFB74D', birchCoins < 2);
+            drawShopMenuButton(SHOP_MENU_BUTTONS.fragment, '[2] 免费碎片抽取', shopFragmentClaimed ? '本次已使用' : '永久属性 3 选 1', 0, '#81C784', shopFragmentClaimed);
+            drawShopMenuButton(SHOP_MENU_BUTTONS.silver, '[3] 银色技能包', '基础成长与稳定收益', 1, PASSIVE_TIERS.SILVER.color, birchCoins < 1);
+            drawShopMenuButton(SHOP_MENU_BUTTONS.gold, '[4] 金色技能包', '改变攻击与任务成长', 3, PASSIVE_TIERS.GOLD.color, birchCoins < 3);
+            drawShopMenuButton(SHOP_MENU_BUTTONS.prismatic, '[5] 炫彩技能包', '构筑核心与逆转能力', 5, PASSIVE_TIERS.PRISMATIC.color, birchCoins < 5);
+            drawShopMenuButton(SHOP_MENU_BUTTONS.leave, '[6] 离开商店', '进入下一张地图', null, '#90CAF9');
+            ctx.fillStyle = '#90A4AE';
+            ctx.font = '12px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`被动槽 ${player.passives.length}/4 · 同名可升级被动不会占用新槽`, CONFIG.CANVAS_WIDTH / 2, 382);
+        }
+
+        function drawBirchShopWeapons() {
+            const pageCount = Math.max(1, Math.ceil(shopChoices.length / 3));
+            const pageWeapons = shopChoices.slice(shopPage * 3, shopPage * 3 + 3);
+            const rects = getShopChoiceRects(3);
+            pageWeapons.forEach((weapon, index) => {
+                const rect = rects[index];
+                const hovered = isInsideButton(mouseX, mouseY, rect);
+                ctx.fillStyle = hovered ? 'rgba(255,183,77,0.16)' : 'rgba(8,13,21,0.9)';
+                ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.strokeStyle = weapon.color; ctx.lineWidth = hovered ? 4 : 2; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.fillStyle = weapon.color; ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'center';
+                ctx.fillText('[ 传说 ]', rect.x + rect.w / 2, rect.y + 28);
+                ctx.fillStyle = '#FFF'; ctx.font = 'bold 18px "Courier New", monospace';
+                ctx.fillText(`[${index + 1}] ${weapon.name}`, rect.x + rect.w / 2, rect.y + 57, rect.w - 18);
+                drawWeaponIcon(ctx, rect.x + rect.w / 2 - 31, rect.y + 72, weapon);
+                ctx.fillStyle = '#FF8A80'; ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.fillText(`攻击 ${formatStat(weapon.damage)}`, rect.x + rect.w / 2, rect.y + 178);
+                ctx.fillStyle = '#B3E5FC'; ctx.font = '12px "Courier New", monospace';
+                drawWrappedCanvasText(weapon.effect, rect.x + rect.w / 2, rect.y + 204, 15, 17, 3);
+                ctx.fillStyle = '#FFF176'; ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.fillText('购买 2 ◈', rect.x + rect.w / 2, rect.y + 264);
+            });
+            ctx.fillStyle = '#B0BEC5'; ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center';
+            ctx.fillText(`全部传说武器 · 第 ${shopPage + 1}/${pageCount} 页`, CONFIG.CANVAS_WIDTH / 2, 128);
+            drawShopAction(SHOP_ACTION_BUTTONS.back, '返回商店 [S]', '#90CAF9');
+            drawShopAction(SHOP_ACTION_BUTTONS.previous, '上一页 [←]', '#CE93D8', shopPage <= 0);
+            drawShopAction(SHOP_ACTION_BUTTONS.next, '下一页 [→]', '#CE93D8', shopPage >= pageCount - 1);
+        }
+
+        function drawBirchShopFragments() {
+            const rects = getShopChoiceRects(shopChoices.length);
+            shopChoices.forEach((fragment, index) => {
+                const rect = rects[index];
+                const hovered = isInsideButton(mouseX, mouseY, rect);
+                ctx.fillStyle = hovered ? 'rgba(129,199,132,0.17)' : 'rgba(8,13,21,0.9)';
+                ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.strokeStyle = fragment.color; ctx.lineWidth = hovered ? 4 : 2; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.fillStyle = fragment.color; ctx.font = 'bold 19px "Courier New", monospace'; ctx.textAlign = 'center';
+                ctx.fillText(`[${index + 1}] ${fragment.name}`, rect.x + rect.w / 2, rect.y + 54, rect.w - 20);
+                ctx.fillStyle = fragment.color; ctx.beginPath(); ctx.arc(rect.x + rect.w / 2, rect.y + 122, 34, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#FFF'; ctx.font = 'bold 27px "Courier New", monospace'; ctx.fillText('✦', rect.x + rect.w / 2, rect.y + 132);
+                ctx.font = 'bold 15px "Courier New", monospace';
+                drawWrappedCanvasText(fragment.desc, rect.x + rect.w / 2, rect.y + 195, 16, 20, 3);
+            });
+            ctx.fillStyle = '#B0BEC5'; ctx.font = '12px "Courier New", monospace'; ctx.textAlign = 'center';
+            ctx.fillText('本次免费抽取已经消耗；可选择一项或返回放弃', CONFIG.CANVAS_WIDTH / 2, 128);
+            drawShopAction(SHOP_ACTION_BUTTONS.back, '放弃并返回 [S]', '#90CAF9');
+        }
+
+        function drawBirchShopPassives() {
+            const tier = PASSIVE_TIERS[shopPackTier];
+            const rects = getShopChoiceRects(shopChoices.length);
+            shopChoices.forEach((def, index) => {
+                const rect = rects[index];
+                const hovered = isInsideButton(mouseX, mouseY, rect);
+                const existing = player.getPassiveEntry(def.id);
+                ctx.fillStyle = hovered ? 'rgba(255,255,255,0.15)' : 'rgba(8,13,21,0.92)';
+                ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.strokeStyle = tier.color; ctx.lineWidth = hovered ? 4 : 2; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.fillStyle = tier.color; ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'center';
+                ctx.fillText(`[ ${tier.name} · ${def.mode === 'stack' ? '可升级' : def.mode === 'quest' ? '任务' : '唯一'} ]`, rect.x + rect.w / 2, rect.y + 30);
+                ctx.fillStyle = '#FFF'; ctx.font = 'bold 21px "Courier New", monospace';
+                ctx.fillText(`[${index + 1}] ${def.name}`, rect.x + rect.w / 2, rect.y + 68, rect.w - 18);
+                ctx.fillStyle = tier.color;
+                ctx.beginPath(); ctx.arc(rect.x + rect.w / 2, rect.y + 119, 28, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#10131B'; ctx.font = 'bold 22px "Courier New", monospace';
+                ctx.fillText(def.mode === 'quest' ? '任' : def.mode === 'stack' ? '升' : '唯一', rect.x + rect.w / 2, rect.y + 127);
+                ctx.fillStyle = '#CFD8DC'; ctx.font = '13px "Courier New", monospace';
+                drawWrappedCanvasText(getPassiveChoiceDescription(def), rect.x + rect.w / 2, rect.y + 174, 16, 19, 4);
+                if (existing) {
+                    ctx.fillStyle = '#FFF176'; ctx.font = 'bold 12px "Courier New", monospace';
+                    ctx.fillText(`当前 Lv.${existing.level} → Lv.${existing.level + 1}`, rect.x + rect.w / 2, rect.y + 260);
+                }
+            });
+            ctx.fillStyle = tier.color; ctx.font = 'bold 13px "Courier New", monospace'; ctx.textAlign = 'center';
+            ctx.fillText(`${tier.name}技能包 · 选择一个被动`, CONFIG.CANVAS_WIDTH / 2, 128);
+            drawShopAction(SHOP_ACTION_BUTTONS.refresh, shopRefreshAvailable ? '全部刷新一次 [F]' : '刷新已用', '#26C6DA', !shopRefreshAvailable);
+            drawShopAction(SHOP_ACTION_BUTTONS.skip, '放弃 [S]', '#FFD54F');
+        }
+
+        function drawBirchShopReplacement() {
+            const width = 190;
+            const gap = 28;
+            const startX = (CONFIG.CANVAS_WIDTH - (width * 4 + gap * 3)) / 2;
+            player.passives.forEach((entry, index) => {
+                const rect = { x: startX + index * (width + gap), y: 158, w: width, h: 248 };
+                const def = PASSIVE_BY_ID[entry.id];
+                const tier = PASSIVE_TIERS[def.tier];
+                const hovered = isInsideButton(mouseX, mouseY, rect);
+                ctx.fillStyle = hovered ? 'rgba(255,82,82,0.17)' : 'rgba(8,13,21,0.92)'; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.strokeStyle = tier.color; ctx.lineWidth = hovered ? 4 : 2; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+                ctx.fillStyle = tier.color; ctx.font = 'bold 12px "Courier New", monospace'; ctx.textAlign = 'center';
+                ctx.fillText(`[${index + 1}] 槽位 ${index + 1} · ${tier.name}`, rect.x + rect.w / 2, rect.y + 30);
+                ctx.fillStyle = '#FFF'; ctx.font = 'bold 18px "Courier New", monospace'; ctx.fillText(def.name, rect.x + rect.w / 2, rect.y + 68, rect.w - 14);
+                ctx.fillStyle = '#B0BEC5'; ctx.font = '12px "Courier New", monospace';
+                drawWrappedCanvasText(def.descriptions[Math.min(entry.level, def.descriptions.length) - 1], rect.x + rect.w / 2, rect.y + 110, 12, 18, 5);
+                ctx.fillStyle = '#FF8A80'; ctx.font = 'bold 13px "Courier New", monospace'; ctx.fillText('点击替换', rect.x + rect.w / 2, rect.y + 225);
+            });
+            ctx.fillStyle = PASSIVE_TIERS[pendingPassive.tier].color; ctx.font = 'bold 14px "Courier New", monospace'; ctx.textAlign = 'center';
+            ctx.fillText(`新被动：${pendingPassive.name} · 请选择一个旧槽替换`, CONFIG.CANVAS_WIDTH / 2, 128);
+            drawShopAction(SHOP_ACTION_BUTTONS.skip, '放弃新被动 [S]', '#FFD54F');
+        }
+
         function drawGameOver() {
             const summary = lastRunSummary || buildRunSummary(gameEndTime || Date.now(), 'unknown');
             const endless = summary.mode === 'endless';
@@ -4449,7 +5563,7 @@
             ctx.fillStyle = '#90A4AE';
             ctx.font = '11px "Courier New", monospace';
             ctx.fillText(`永久成长：攻击 +${summary.upgrades.damage} · 生命 +${summary.upgrades.hp} · 范围 +${summary.upgrades.range} · 弹容 +${summary.upgrades.ammo}`, CONFIG.CANVAS_WIDTH / 2, 398);
-            ctx.fillText(`本段奖励：新武器 ${summary.weaponsClaimed} · 永久碎片 ${summary.fragmentsClaimed}`, CONFIG.CANVAS_WIDTH / 2, 416);
+            ctx.fillText(`本段奖励：新武器 ${summary.weaponsClaimed} · 碎片 ${summary.fragmentsClaimed} · 被动 ${summary.passivesClaimed} · 白桦币 +${summary.birchCoinsEarned}/-${summary.birchCoinsSpent}（余 ${summary.birchCoins}）`, CONFIG.CANVAS_WIDTH / 2, 416, 636);
 
             drawTitleButton(GAMEOVER_BUTTONS.restart, '重新远征 [Enter]');
             drawTitleButton(GAMEOVER_BUTTONS.title, '返回标题 [Esc]');
@@ -4661,9 +5775,16 @@
             const variant = weapon.visualVariant;
             ctx.save();
             ctx.scale(scale, scale);
+            ctx.imageSmoothingEnabled = false;
+            ctx.shadowColor = '#080A0F';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
             if (weapon.rarity !== 'COMMON') {
                 ctx.shadowColor = weapon.glowColor;
                 ctx.shadowBlur = weapon.rarity === 'LEGENDARY' ? 10 : 5;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
             }
 
             if (model === 'sword' || model === 'dagger' || model === 'greatsword') {
@@ -4872,6 +5993,22 @@
                     ctx.fillStyle = p.edge; ctx.fillRect(35, -2, 22, 2);
                 }
             }
+            if (detail) {
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+                // 统一的皮革缠柄与稀有符文，使模型保持写实像素武器语言。
+                ctx.strokeStyle = p.edge;
+                ctx.lineWidth = 1;
+                for (let wrap = -9; wrap <= -1; wrap += 4) {
+                    ctx.beginPath(); ctx.moveTo(wrap, -3); ctx.lineTo(wrap + 3, 3); ctx.stroke();
+                }
+                if (weapon.rarity === 'LEGENDARY') {
+                    ctx.fillStyle = weapon.particleColor;
+                    ctx.globalAlpha = 0.9;
+                    ctx.beginPath(); ctx.moveTo(2, -4); ctx.lineTo(6, 0); ctx.lineTo(2, 4); ctx.lineTo(-2, 0); ctx.closePath(); ctx.fill();
+                }
+            }
             ctx.restore();
         }
 
@@ -4925,6 +6062,39 @@
             return (MAP_HEIGHT - 2) * CONFIG.TILE_SIZE - entityHeight;
         }
 
+        function getEnemyCountForWave(wave) {
+            return Math.min(
+                CONFIG.MAX_ENEMIES_PER_WAVE,
+                CONFIG.BASE_ENEMIES_PER_WAVE + Math.floor((wave - 1) * 1.35)
+            );
+        }
+
+        function positionPlayerAtWaveEntrance(random = Math.random) {
+            mapTravelDirection = random() < 0.5 ? 1 : -1;
+            player.x = mapTravelDirection > 0
+                ? 100
+                : MAP_WIDTH * CONFIG.TILE_SIZE - 100 - player.width;
+            player.y = findGroundYAt(player.x, player.height) - 2;
+            player.facing = mapTravelDirection;
+            player.vx = 0;
+            player.vy = 0;
+            player.resetMapPassives();
+        }
+
+        function createTreasureChestForWave(wave, random = Math.random) {
+            if (isBossWave(wave) || random() >= 0.82) return null;
+            const isMimic = random() < 0.22;
+            const margin = 7 * CONFIG.TILE_SIZE;
+            const maxX = MAP_WIDTH * CONFIG.TILE_SIZE - margin;
+            let x = margin + random() * (maxX - margin);
+            for (let tries = 0; tries < 10 && Math.abs(x - player.x) < 300; tries++) {
+                x = margin + random() * (maxX - margin);
+            }
+            const chest = new TreasureChest(x, 0, wave, isMimic, rollBirchCoinReward(random));
+            chest.y = findGroundYAt(x, chest.height);
+            return chest;
+        }
+
         // 根据波次生成敌人
         function spawnEnemiesForWave() {
             enemies = [];
@@ -4938,10 +6108,8 @@
             generateClouds();
             spawnWeatherParticles(currentBiome.weather);
             runStats.highestWave = Math.max(runStats.highestWave, currentWave);
-            player.x = 100;
-            player.y = findGroundYAt(player.x, player.height) - 2;
-            player.vx = 0;
-            player.vy = 0;
+            positionPlayerAtWaveEntrance();
+            treasureChest = null;
 
             // Boss 波
             if (isBossWave(currentWave)) {
@@ -4955,10 +6123,9 @@
 
             startMusic(currentBiome.musicKey);
 
-            const enemyCount = Math.min(
-                CONFIG.MAX_ENEMIES_PER_WAVE,
-                CONFIG.BASE_ENEMIES_PER_WAVE + Math.floor((currentWave - 1) * 1.35)
-            );
+            treasureChest = createTreasureChestForWave(currentWave);
+            // 宝箱怪也计入 20 只硬上限；高波次为它预留一个隐藏名额。
+            const enemyCount = Math.max(1, getEnemyCountForWave(currentWave) - (treasureChest?.isMimic ? 1 : 0));
             
             const margin = 4 * CONFIG.TILE_SIZE;
             const minX = margin;
@@ -4974,16 +6141,8 @@
                     tries++;
                 }
 
-                // 无尽模式会按波次概率生成带独立种子、外观和属性预算的混沌怪物。
-                let enemy;
-                const chaosCount = spawnedTypeCounts.chaos || 0;
-                if (shouldSpawnChaosEnemy(currentWave, chaosCount)) {
-                    const profile = createChaosProfile(currentWave, createChaosSeed(currentWave, i));
-                    enemy = new Enemy(x, 0, currentWave, 'chaos', profile);
-                } else {
-                    const type = chooseEnemyType(currentWave, spawnedTypeCounts);
-                    enemy = new Enemy(x, 0, currentWave, type);
-                }
+                const type = chooseEnemyType(currentWave, spawnedTypeCounts);
+                const enemy = new Enemy(x, 0, currentWave, type);
                 enemy.y = findGroundYAt(x, enemy.height);
                 enemies.push(enemy);
                 spawnedTypeCounts[enemy.type] = (spawnedTypeCounts[enemy.type] || 0) + 1;
@@ -4992,7 +6151,7 @@
             // 兜底：若意外未生成，强制生成 3 个僵尸在玩家附近
             if (enemies.length === 0) {
                 for (let i = 0; i < 3; i++) {
-                    const x = player.x + 150 + i * 60;
+                    const x = player.x + mapTravelDirection * (150 + i * 60);
                     const groundY = (MAP_HEIGHT - 2) * CONFIG.TILE_SIZE - 32;
                     enemies.push(new Enemy(Math.min(maxX, Math.max(minX, x)), groundY, currentWave, 'zombie'));
                 }
@@ -5000,8 +6159,8 @@
 
             totalEnemiesInWave = enemies.length;
             enemiesRemaining = enemies.length;
-            const chaosCount = enemies.filter(enemy => enemy.isChaos).length;
-            announce(`第 ${currentWave} 波开始，共 ${enemiesRemaining} 个敌人${chaosCount > 0 ? `，其中 ${chaosCount} 个混沌怪物` : ''}。`);
+            const directionLabel = mapTravelDirection > 0 ? '从左向右' : '从右向左';
+            announce(`第 ${currentWave} 波开始，${directionLabel}推进，共 ${enemiesRemaining} 个敌人${treasureChest ? '，地图中有一个可攻击的宝箱' : ''}。`);
         }
         
         // 初始化为标题界面
@@ -5031,6 +6190,13 @@
 
             if (gameState === 'reward') {
                 if (e.repeat) return;
+                if (currentRewardType === 'shop') {
+                    if (handleShopKey(e.code)) {
+                        e.preventDefault();
+                        if (gameState === 'reward' && currentRewardType === 'shop') updateHoveredChoice();
+                    }
+                    return;
+                }
                 if (/^(Digit|Numpad)[1-3]$/.test(e.code)) {
                     e.preventDefault();
                     chooseReward(Number(e.code.slice(-1)) - 1);
@@ -5070,26 +6236,29 @@
 
         touchButtons.forEach(btn => {
             const action = btn.dataset.action;
-            const setActive = (state) => {
+            const setActive = (state, event) => {
                 if (state && pagePaused) return;
+                if (action === 'attack') {
+                    setAttackPointers(touchAttackPointerIds, event, state);
+                    return;
+                }
                 touchActive[action] = state;
                 if (action === 'left') keys['KeyA'] = state;
                 if (action === 'right') keys['KeyD'] = state;
                 if (action === 'jump') keys['Space'] = state;
                 if (action === 'reload' && state && gameState === 'playing') player.startReload();
-                if (action === 'attack') mousePressed = state;
                 if (action === 'heal') keys['KeyU'] = state;
             };
             const start = e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (btn.setPointerCapture && e.pointerId !== undefined) btn.setPointerCapture(e.pointerId);
-                setActive(true);
+                setActive(true, e);
             };
             const end = e => {
                 e.preventDefault();
                 e.stopPropagation();
-                setActive(false);
+                setActive(false, e);
             };
             btn.addEventListener('pointerdown', start);
             btn.addEventListener('pointerup', end);
@@ -5166,16 +6335,20 @@
                 return;
             }
             if (gameState === 'playing') {
-                mousePressed = true;
+                setAttackPointers(canvasAttackPointerIds, e, true);
             }
         });
 
-        const releasePointerAttack = () => {
-            mousePressed = false;
+        const releasePointerAttack = event => {
+            for (const pointerId of getInputPointerIds(event)) {
+                canvasAttackPointerIds.delete(pointerId);
+                touchAttackPointerIds.delete(pointerId);
+            }
+            syncPointerAttackState();
         };
 
         canvas.addEventListener('pointerup', e => {
-            releasePointerAttack();
+            releasePointerAttack(e);
             if (gameState === 'title' && e.pointerType !== 'mouse') {
                 handleTitleClick(e);
             }
@@ -5231,7 +6404,189 @@
             }
         });
 
+        function returnToShopMenu(message = '已返回白桦商店。') {
+            shopView = 'menu';
+            shopChoices = [];
+            shopPackTier = null;
+            shopRefreshAvailable = false;
+            shopPage = 0;
+            pendingPassive = null;
+            shopMessage = message;
+        }
+
+        function handleShopKey(code) {
+            const numberMatch = code.match(/^(?:Digit|Numpad)([1-6])$/);
+            const number = numberMatch ? Number(numberMatch[1]) : 0;
+            if (shopView === 'menu') {
+                if (number === 1) return openShopWeaponView();
+                if (number === 2) return openShopFragmentView();
+                if (number === 3) return openShopPassivePack('SILVER');
+                if (number === 4) return openShopPassivePack('GOLD');
+                if (number === 5) return openShopPassivePack('PRISMATIC');
+                if (number === 6 || code === 'KeyS' || code === 'Escape') return leaveBirchShop();
+                return false;
+            }
+            if (shopView === 'weapon') {
+                if (number >= 1 && number <= 3) return buyShopLegendary(number - 1);
+                if (code === 'ArrowLeft') {
+                    shopPage = Math.max(0, shopPage - 1);
+                    return true;
+                }
+                if (code === 'ArrowRight') {
+                    shopPage = Math.min(Math.ceil(shopChoices.length / 3) - 1, shopPage + 1);
+                    return true;
+                }
+                if (code === 'KeyS' || code === 'Escape') {
+                    returnToShopMenu('未更换武器。');
+                    return true;
+                }
+                return false;
+            }
+            if (shopView === 'fragment') {
+                if (number >= 1 && number <= 3) return claimShopFragment(number - 1);
+                if (code === 'KeyS' || code === 'Escape') {
+                    returnToShopMenu('已放弃本次免费碎片。');
+                    return true;
+                }
+                return false;
+            }
+            if (shopView === 'passive') {
+                if (number >= 1 && number <= 3) return chooseShopPassive(number - 1);
+                if (code === 'KeyF') return refreshShopPassivePack();
+                if (code === 'KeyS' || code === 'Escape') {
+                    returnToShopMenu('已放弃本次技能包，费用不退还。');
+                    return true;
+                }
+                return false;
+            }
+            if (shopView === 'replace') {
+                if (number >= 1 && number <= 4) return replaceShopPassive(number - 1);
+                if (code === 'KeyS' || code === 'Escape') {
+                    returnToShopMenu('已放弃新被动，原有四个槽位保持不变。');
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function handleShopClick() {
+            if (shopView === 'menu') {
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.weapon)) return openShopWeaponView();
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.fragment)) return openShopFragmentView();
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.silver)) return openShopPassivePack('SILVER');
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.gold)) return openShopPassivePack('GOLD');
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.prismatic)) return openShopPassivePack('PRISMATIC');
+                if (isInsideButton(mouseX, mouseY, SHOP_MENU_BUTTONS.leave)) return leaveBirchShop();
+                return false;
+            }
+
+            if (shopView === 'weapon') {
+                const rects = getShopChoiceRects(3);
+                for (let index = 0; index < rects.length; index++) {
+                    if (isInsideButton(mouseX, mouseY, rects[index])) return buyShopLegendary(index);
+                }
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.back)) {
+                    returnToShopMenu('未更换武器。'); return true;
+                }
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.previous) && shopPage > 0) {
+                    shopPage--; return true;
+                }
+                const pageCount = Math.ceil(shopChoices.length / 3);
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.next) && shopPage < pageCount - 1) {
+                    shopPage++; return true;
+                }
+                return false;
+            }
+
+            if (shopView === 'fragment') {
+                const rects = getShopChoiceRects(shopChoices.length);
+                for (let index = 0; index < rects.length; index++) {
+                    if (isInsideButton(mouseX, mouseY, rects[index])) return claimShopFragment(index);
+                }
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.back)) {
+                    returnToShopMenu('已放弃本次免费碎片。'); return true;
+                }
+                return false;
+            }
+
+            if (shopView === 'passive') {
+                const rects = getShopChoiceRects(shopChoices.length);
+                for (let index = 0; index < rects.length; index++) {
+                    if (isInsideButton(mouseX, mouseY, rects[index])) return chooseShopPassive(index);
+                }
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.refresh)) return refreshShopPassivePack();
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.skip)) {
+                    returnToShopMenu('已放弃本次技能包，费用不退还。'); return true;
+                }
+                return false;
+            }
+
+            if (shopView === 'replace') {
+                const width = 190;
+                const gap = 28;
+                const startX = (CONFIG.CANVAS_WIDTH - (width * 4 + gap * 3)) / 2;
+                for (let index = 0; index < 4; index++) {
+                    const rect = { x: startX + index * (width + gap), y: 158, w: width, h: 248 };
+                    if (isInsideButton(mouseX, mouseY, rect)) return replaceShopPassive(index);
+                }
+                if (isInsideButton(mouseX, mouseY, SHOP_ACTION_BUTTONS.skip)) {
+                    returnToShopMenu('已放弃新被动，原有槽位保持不变。'); return true;
+                }
+            }
+            return false;
+        }
+
+        function isShopPointInteractive(mx, my) {
+            if (shopView === 'menu') {
+                const targets = [
+                    [SHOP_MENU_BUTTONS.weapon, birchCoins >= 2],
+                    [SHOP_MENU_BUTTONS.fragment, !shopFragmentClaimed],
+                    [SHOP_MENU_BUTTONS.silver, birchCoins >= PASSIVE_TIERS.SILVER.cost],
+                    [SHOP_MENU_BUTTONS.gold, birchCoins >= PASSIVE_TIERS.GOLD.cost],
+                    [SHOP_MENU_BUTTONS.prismatic, birchCoins >= PASSIVE_TIERS.PRISMATIC.cost],
+                    [SHOP_MENU_BUTTONS.leave, true]
+                ];
+                return targets.some(([rect, enabled]) => enabled && isInsideButton(mx, my, rect));
+            }
+            if (shopView === 'weapon') {
+                const pageCount = Math.max(1, Math.ceil(shopChoices.length / 3));
+                const visibleCount = shopChoices.slice(shopPage * 3, shopPage * 3 + 3).length;
+                const overCard = getShopChoiceRects(3)
+                    .slice(0, visibleCount)
+                    .some(rect => isInsideButton(mx, my, rect));
+                return overCard
+                    || isInsideButton(mx, my, SHOP_ACTION_BUTTONS.back)
+                    || (shopPage > 0 && isInsideButton(mx, my, SHOP_ACTION_BUTTONS.previous))
+                    || (shopPage < pageCount - 1 && isInsideButton(mx, my, SHOP_ACTION_BUTTONS.next));
+            }
+            if (shopView === 'fragment') {
+                return getShopChoiceRects(shopChoices.length).some(rect => isInsideButton(mx, my, rect))
+                    || isInsideButton(mx, my, SHOP_ACTION_BUTTONS.back);
+            }
+            if (shopView === 'passive') {
+                return getShopChoiceRects(shopChoices.length).some(rect => isInsideButton(mx, my, rect))
+                    || (shopRefreshAvailable && isInsideButton(mx, my, SHOP_ACTION_BUTTONS.refresh))
+                    || isInsideButton(mx, my, SHOP_ACTION_BUTTONS.skip);
+            }
+            if (shopView === 'replace') {
+                const width = 190;
+                const gap = 28;
+                const startX = (CONFIG.CANVAS_WIDTH - (width * 4 + gap * 3)) / 2;
+                const overSlot = player.passives.some((entry, index) => isInsideButton(mx, my, {
+                    x: startX + index * (width + gap), y: 158, w: width, h: 248
+                }));
+                return overSlot || isInsideButton(mx, my, SHOP_ACTION_BUTTONS.skip);
+            }
+            return false;
+        }
+
         function updateHoveredChoice() {
+            if (currentRewardType === 'shop') {
+                hoveredChoice = -1;
+                hoveredRewardAction = null;
+                canvas.style.cursor = isShopPointInteractive(mouseX, mouseY) ? 'pointer' : 'default';
+                return;
+            }
             const cardWidth = 250;
             const cardHeight = 280;
             const cardSpacing = 30;
@@ -5263,6 +6618,11 @@
         }
 
         function handleRewardClick() {
+            if (currentRewardType === 'shop') {
+                handleShopClick();
+                if (gameState === 'reward' && currentRewardType === 'shop') updateHoveredChoice();
+                return;
+            }
             if (hoveredRewardAction === 'refresh') {
                 refreshWeaponReward();
                 return;
@@ -5319,6 +6679,10 @@
                 player.setWeapon(pool[index]);
                 runStats.weaponsClaimed++;
                 if (gameMode === 'endless') runStats.endlessWeaponsClaimed++;
+                if (player.weapon.rarity === 'LEGENDARY') {
+                    openBirchShop();
+                    return;
+                }
             } else {
                 applyEnchantment(pool[index]);
                 runStats.fragmentsClaimed++;
@@ -5387,6 +6751,7 @@
             // 更新玩家
             player.update();
             if (gameState !== 'playing') return;
+            treasureChest?.update();
 
             // 更新敌人
             for (const enemy of enemies) {
@@ -5398,7 +6763,7 @@
                 const meleeToken = `melee-${player.attackSequence}`;
                 if (attackBox && enemy.alive && enemy.lastHitToken !== meleeToken) {
                     if (player.attackIntersects(enemy)) {
-                        const didHit = enemy.takeDamage(player.getAttackDamage(), player.facing, player.weapon.getKnockback(), meleeToken);
+                        const didHit = enemy.takeDamage(player.getAttackDamage(), player.facing, player.getAttackKnockback(), meleeToken, 9, { source: 'weapon' });
                         if (didHit) playSfx(`hit_${player.weapon.model || 'sword'}`);
                         
                         // 传说武器命中粒子
@@ -5410,13 +6775,22 @@
                 if (gameState !== 'playing') return;
             }
 
+            if (treasureChest?.alive) {
+                const attackBox = player.getAttackBox();
+                const meleeToken = `melee-${player.attackSequence}`;
+                if (attackBox && treasureChest.lastHitToken !== meleeToken && player.attackIntersects(treasureChest)) {
+                    treasureChest.takeDamage(meleeToken);
+                }
+            }
+
             // 敌人掉出地图视为死亡
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const e = enemies[i];
                 if (e.alive && e.y > MAP_HEIGHT * CONFIG.TILE_SIZE + 200) {
                     e.alive = false;
-                    enemiesRemaining--;
+                    enemiesRemaining = Math.max(0, enemiesRemaining - 1);
                     recordKill(e);
+                    if (e.type === 'mimic') awardBirchCoins(e.coinDrop || rollBirchCoinReward(), e.x, player.y);
                 }
             }
 
@@ -5427,7 +6801,7 @@
                 const attackBox = player.getAttackBox();
                 const meleeToken = `melee-${player.attackSequence}`;
                 if (attackBox && activeBoss.lastHitToken !== meleeToken && player.attackIntersects(activeBoss)) {
-                    const didHit = activeBoss.takeDamage(player.getAttackDamage(), player.facing, player.weapon.getKnockback(), meleeToken);
+                    const didHit = activeBoss.takeDamage(player.getAttackDamage(), player.facing, player.getAttackKnockback(), meleeToken, 8, { source: 'weapon' });
                     if (didHit) playSfx(`hit_${player.weapon.model || 'sword'}`);
                     if (gameState !== 'playing') return;
                 }
@@ -5457,7 +6831,9 @@
                         if (!enemy.alive || p.hitTargets.has(enemy)) continue;
                         if (enemy.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
                             p.hitTargets.add(enemy);
-                            const didHit = enemy.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames);
+                            const didHit = enemy.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames, {
+                                source: p.damageSource, passiveDamage: p.passiveDamage, canCrit: p.canCrit, noTrigger: p.noTrigger
+                            });
                             if (didHit) {
                                 playSfx('hit_sword');
                                 if (p.pierce > 0) p.pierce--;
@@ -5468,10 +6844,18 @@
                         }
                     }
 
+                    if (!consumed && treasureChest?.alive && !p.hitTargets.has(treasureChest) &&
+                        treasureChest.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
+                        p.hitTargets.add(treasureChest);
+                        if (treasureChest.takeDamage(p.token)) consumed = true;
+                    }
+
                     if (!consumed && activeBoss && activeBoss.alive && !p.hitTargets.has(activeBoss) &&
                         activeBoss.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
                         p.hitTargets.add(activeBoss);
-                        const didHit = activeBoss.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames);
+                        const didHit = activeBoss.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames, {
+                            source: p.damageSource, passiveDamage: p.passiveDamage, canCrit: p.canCrit, noTrigger: p.noTrigger
+                        });
                         if (didHit) {
                             playSfx('hit_sword');
                             if (p.pierce > 0) p.pierce--;
@@ -5489,6 +6873,11 @@
 
             // 波次完成统一延迟到本逻辑帧全部伤害结算后；同帧致命伤害优先于奖励/通关。
             if (gameState === 'playing' && enemiesRemaining <= 0) {
+                // 清场时保底开启尚未触碰的宝箱，避免奖励被切换地图直接吞掉；若是宝箱怪则继续战斗。
+                if (treasureChest?.alive && !treasureChest.opened) {
+                    treasureChest.takeDamage(`wave-clear-chest-${currentWave}`);
+                    if (enemiesRemaining > 0) return;
+                }
                 onWaveComplete();
                 return;
             }
@@ -5551,6 +6940,9 @@
 
             // 绘制地图
             drawMap();
+
+            // 每张地图最多一个宝箱；可能在受击时显露为宝箱怪。
+            treasureChest?.draw(ctx);
 
             // 绘制敌人
             enemies.forEach(enemy => enemy.draw(ctx));

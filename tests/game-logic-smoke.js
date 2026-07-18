@@ -371,7 +371,7 @@ const assertions = `
     const warden = new Enemy(300, 200, 3, 'warden');
     assert(ENEMY_TYPES.warden.baseHp > 72, '护盾精英生命值没有提高');
     assert(ENEMY_TYPES.warden.shield >= 55 * 5, '护盾精英基础护盾不足原值的 5 倍');
-    assert(warden.isEliteType && !warden.empowered, '护盾守卫没有作为固定精英类型');
+    assert(warden.isEliteType && warden.elite, '护盾守卫没有作为固定精英类型');
     const hpBeforeShieldHit = warden.hp;
     const shieldBeforeHit = warden.shield;
     warden.takeDamage(10, 1, 4, 'shield-test-1');
@@ -398,54 +398,90 @@ const assertions = `
     assert(enemies.filter(enemy => ['warden', 'prism'].includes(enemy.type)).every(enemy => enemy.isEliteType), '特殊敌人未标记为精英');
     assert(!['warden', 'prism'].includes(chooseEnemyType(5, { warden: 1, prism: 1 })), '达到单波上限后仍能抽到受限精英');
 
-    // 混沌怪物只在无尽模式出现；同一种子稳定，不同种子产生有边界的外观和属性。
-    const enemyTypesBeforeChaos = JSON.stringify(ENEMY_TYPES);
-    const chaosA = createChaosProfile(21, 0x12345678);
-    const chaosB = createChaosProfile(21, 0x12345678);
-    assert(JSON.stringify(chaosA) === JSON.stringify(chaosB), '同一种子没有生成稳定的混沌怪物');
-    const chaosSignatures = new Set();
-    for (let seed = 1; seed <= 96; seed++) {
-        const profile = createChaosProfile(31, seed);
-        chaosSignatures.add([
-            profile.baseType, profile.traitId, profile.mutationId, profile.color,
-            profile.shape, profile.pattern, profile.eyeCount, profile.hornCount,
-            profile.baseHp, profile.baseDmg, profile.speed
-        ].join('|'));
-        assert(Number.isFinite(profile.baseHp) && profile.baseHp >= 18 && profile.baseHp <= 190, '混沌怪物生命值越界');
-        assert(Number.isFinite(profile.baseDmg) && profile.baseDmg >= 5 && profile.baseDmg <= 26, '混沌怪物攻击力越界');
-        assert(Number.isFinite(profile.speed) && profile.speed >= 0.55 && profile.speed <= 3.2, '混沌怪物速度越界');
-        assert(Number.isFinite(profile.knockResist) && profile.knockResist >= 0.55 && profile.knockResist <= 2.15, '混沌怪物抗击退越界');
-        assert(profile.width >= 18 && profile.width <= 44 && profile.height >= 23 && profile.height <= 52, '混沌怪物体型越界');
-        assert(profile.eyeCount >= 1 && profile.eyeCount <= 3 && profile.hornCount >= 0 && profile.hornCount <= 2, '混沌怪物外观参数越界');
-        assert(!(profile.ranged && profile.leaper), '混沌怪物同时获得远程和跃袭行为');
-    }
-    assert(chaosSignatures.size >= 80, '混沌怪物随机组合的多样性不足');
-    assert(JSON.stringify(ENEMY_TYPES) === enemyTypesBeforeChaos, '生成混沌怪物时污染了基础敌人配置');
-
-    const chaosEnemy = new Enemy(250, 120, 21, 'chaos', chaosA);
-    const chaosSnapshot = JSON.stringify(chaosEnemy.chaosProfile);
-    assert(chaosEnemy.isChaos && !chaosEnemy.isEliteType && !chaosEnemy.empowered, '混沌怪物被错误归类为固定精英或强化怪');
-    chaosEnemy.draw(ctx);
-    chaosEnemy.draw(ctx);
-    assert(JSON.stringify(chaosEnemy.chaosProfile) === chaosSnapshot, '绘制过程改变了混沌怪物的随机外观');
-
-    gameMode = 'story';
-    assert(!shouldSpawnChaosEnemy(21, 0, () => 0), '主线模式错误生成混沌怪物');
+    // 怪物数量在主线与无尽都硬封顶 20，之后只继续增长强度；随机混沌怪已取消。
+    assert(CONFIG.MAX_ENEMIES_PER_WAVE === 20, '怪物硬上限不是 20');
+    assert(getEnemyCountForWave(1) === CONFIG.BASE_ENEMIES_PER_WAVE, '首波怪物数量错误');
+    assert(getEnemyCountForWave(30) === 20 && getEnemyCountForWave(100) === 20, '高波次怪物数量突破 20');
+    const strengthAt21 = new Enemy(0, 0, 21, 'zombie');
+    const strengthAt31 = new Enemy(0, 0, 31, 'zombie');
+    assert(strengthAt31.maxHp > strengthAt21.maxHp && strengthAt31.damage > strengthAt21.damage, '达到数量上限后怪物强度没有继续增长');
+    assert(!ENEMY_SPAWN_TABLE.some(entry => entry.type === 'chaos'), '无尽随机混沌怪仍在出生表中');
     gameMode = 'endless';
-    assert(!shouldSpawnChaosEnemy(20, 0, () => 0), '无尽 Boss 波错误生成混沌怪物');
-    assert(shouldSpawnChaosEnemy(21, 0, () => 0), '无尽普通波无法生成混沌怪物');
-    assert(!shouldSpawnChaosEnemy(21, getChaosSpawnCap(21), () => 0), '混沌怪物超过单波数量上限');
-
-    Math.random = () => 0;
-    currentWave = CHAOS_SPAWN_RULES.startWave;
-    const expectedEndlessEnemyCount = Math.min(
-        CONFIG.MAX_ENEMIES_PER_WAVE,
-        CONFIG.BASE_ENEMIES_PER_WAVE + Math.floor((currentWave - 1) * 1.35)
-    );
+    currentWave = 21;
+    Math.random = () => 0.999;
     spawnEnemiesForWave();
     Math.random = originalRandomForSpawns;
-    assert(enemies.filter(enemy => enemy.isChaos).length === getChaosSpawnCap(currentWave), '无尽波次没有按上限替换生成混沌怪物');
-    assert(enemies.length === expectedEndlessEnemyCount && totalEnemiesInWave === expectedEndlessEnemyCount, '混沌怪物作为额外敌人改变了本波总量');
+    assert(enemies.length === 20 && enemies.every(enemy => enemy.type !== 'chaos'), '无尽普通波未遵守 20 只固定怪物上限');
+
+    // 每张地图随机决定左右入口，两个方向都必须能正常落地并面向地图内部。
+    positionPlayerAtWaveEntrance(() => 0);
+    const leftSpawnX = player.x;
+    assert(mapTravelDirection === 1 && player.facing === 1 && leftSpawnX < MAP_WIDTH * CONFIG.TILE_SIZE / 2, '左到右入口失效');
+    positionPlayerAtWaveEntrance(() => 0.999);
+    assert(mapTravelDirection === -1 && player.facing === -1 && player.x > MAP_WIDTH * CONFIG.TILE_SIZE / 2, '右到左入口失效');
+    const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+    player.x = -1;
+    player.y = findGroundYAt(0, player.height) - 2;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = true;
+    player.update();
+    assert(player.x === worldWidth - player.width && player.y === findGroundYAt(worldWidth - player.width / 2, player.height) - 2, '玩家跨出左边缘后没有从右侧安全落地');
+    player.x = worldWidth - player.width + 1;
+    player.y = findGroundYAt(worldWidth - 1, player.height) - 2;
+    player.vy = 0;
+    player.onGround = true;
+    player.update();
+    assert(player.x === 0 && player.y === findGroundYAt(player.width / 2, player.height) - 2, '玩家跨出右边缘后没有从左侧安全落地');
+
+    // 宝箱奖励严格为 1-5；宝箱怪不在普通出生表中，并在显形时计入怪物上限。
+    assert(rollBirchCoinReward(() => 0) === 1 && rollBirchCoinReward(() => 0.999) === 5, '白桦币奖励不在 1-5 范围');
+    assert(!ENEMY_SPAWN_TABLE.some(entry => entry.type === 'mimic'), '宝箱怪被错误加入普通出生表');
+    birchCoins = 0;
+    const normalChest = new TreasureChest(100, 100, 5, false, 5);
+    assert(normalChest.takeDamage('open-normal') && birchCoins === 5 && normalChest.opened, '普通宝箱没有发放白桦币');
+    enemies = [];
+    enemiesRemaining = 0;
+    totalEnemiesInWave = 0;
+    const mimicChest = new TreasureChest(140, 100, 5, true, 3);
+    assert(mimicChest.takeDamage('open-mimic'), '宝箱怪没有被攻击唤醒');
+    assert(enemies.length === 1 && enemies[0].type === 'mimic' && enemiesRemaining === 1 && totalEnemiesInWave === 1, '宝箱怪显形没有正确计入敌人数量');
+    assert(enemies[0].coinDrop === 3, '宝箱怪丢失了隐藏的白桦币奖励');
+    const fallingMimic = enemies[0];
+    fallingMimic.y = MAP_HEIGHT * CONFIG.TILE_SIZE + 201;
+    birchCoins = 0;
+    gameState = 'playing';
+    activeBoss = null;
+    projectiles.length = 0;
+    player.hp = player.maxHp;
+    player.invincible = 999;
+    update();
+    assert(!fallingMimic.alive && birchCoins === 3 && enemiesRemaining === 0, '宝箱怪掉出地图后没有结算唯一一次白桦币和死亡计数');
+    update();
+    assert(birchCoins === 3, '已死亡宝箱怪重复掉落白桦币');
+
+    // 清场会保底处理未开启宝箱；普通箱直接结算，伪装箱则唤醒并阻止提前过关。
+    runStats = createRunStats('story');
+    currentWave = 2;
+    gameState = 'playing';
+    waveCompletionHandled = false;
+    enemies = [];
+    enemiesRemaining = 0;
+    totalEnemiesInWave = 0;
+    birchCoins = 0;
+    treasureChest = new TreasureChest(180, 100, 2, false, 2);
+    update();
+    assert(treasureChest.opened && birchCoins === 2, '清场后未开启的普通宝箱被切图吞掉');
+    gameState = 'playing';
+    waveCompletionHandled = false;
+    enemies = [];
+    enemiesRemaining = 0;
+    totalEnemiesInWave = 0;
+    treasureChest = new TreasureChest(180, 100, 2, true, 4);
+    update();
+    assert(gameState === 'playing' && enemiesRemaining === 1 && enemies.length === 1 && enemies[0].type === 'mimic', '清场保底开启宝箱怪后仍提前进入下一波');
+    treasureChest = null;
+    enemies = [];
     gameMode = 'story';
 
     // 玩家投射物必须实际接入普通敌人的全局命中分支。
@@ -545,6 +581,119 @@ const assertions = `
     openNextReward();
     assert(currentRewardType === 'weapon' && weaponRewardRefreshAvailable, '下一次武器奖励页没有恢复一次刷新机会');
 
+    // 橙武固定改走白桦商店；商店经济、全部橙武、免费碎片与技能包规则。
+    player.resetProgression();
+    const legendarySword = new Weapon(WEAPON_DATABASE.LEGENDARY[0], 'LEGENDARY');
+    player.setWeapon(legendarySword);
+    gameState = 'playing';
+    currentWave = 7;
+    birchCoins = 10;
+    prepareWaveRewards();
+    assert(gameState === 'reward' && currentRewardType === 'shop' && shopView === 'menu', '持有橙武后没有固定开启白桦商店');
+    assert(rewardQueue.length === 0, '橙武持有者仍保留普通武器或碎片奖励队列');
+    assert(openShopWeaponView() && shopChoices.length === WEAPON_DATABASE.LEGENDARY.length, '商店没有展示全部橙色武器');
+    const coinsBeforeWeapon = birchCoins;
+    assert(buyShopLegendary(0) && birchCoins === coinsBeforeWeapon - 2, '更换橙武没有精确扣除 2 白桦币');
+    assert(openShopFragmentView() && shopChoices.length === 3 && shopFragmentClaimed, '0 币碎片抽取没有生成 3 个选项');
+    returnToShopMenu('test');
+    assert(!openShopFragmentView(), '同一次白桦商店允许反复免费抽碎片');
+    const coinsBeforeSilver = birchCoins;
+    assert(openShopPassivePack('SILVER') && birchCoins === coinsBeforeSilver - 1 && shopRefreshAvailable, '银色技能包价格或刷新状态错误');
+    const passiveIdsBeforeRefresh = shopChoices.map(choice => choice.id);
+    assert(refreshShopPassivePack() && !shopRefreshAvailable, '技能包没有提供一次整组刷新');
+    assert(!refreshShopPassivePack(), '同一个技能包允许第二次刷新');
+    assert(shopChoices.every(choice => !passiveIdsBeforeRefresh.includes(choice.id)), '技能包刷新没有尽量排除原选项');
+    returnToShopMenu('test');
+    birchCoins = 2;
+    assert(!openShopPassivePack('GOLD') && birchCoins === 2, '余额不足仍购买了金色技能包');
+    birchCoins = 4;
+    assert(!openShopPassivePack('PRISMATIC') && birchCoins === 4, '余额不足仍购买了炫彩技能包');
+
+    // 18 个被动分成银/金/炫彩三档；同名升级不占槽，新被动满槽时必须替换。
+    assert(PASSIVE_LIBRARY.length >= 18, '银/金/炫彩被动种类不足');
+    for (const tier of Object.keys(PASSIVE_TIERS)) {
+        assert(PASSIVE_LIBRARY.filter(passive => passive.tier === tier).length >= 6, tier + ' 被动少于 6 个');
+    }
+    assert(PASSIVE_TIERS.SILVER.cost === 1 && PASSIVE_TIERS.GOLD.cost === 3 && PASSIVE_TIERS.PRISMATIC.cost === 5, '三档技能包价格不是 1/3/5');
+    player.resetProgression();
+    const keenEdge = PASSIVE_BY_ID.keen_edge;
+    for (let level = 1; level <= 4; level++) assert(player.addOrUpgradePassive(keenEdge).applied, '锋刃校准升级失败');
+    assert(player.passives.length === 1 && player.getPassiveLevel('keen_edge') === 4 && getPassiveValue('keen_edge', 4) === 0.25, '暴击被动没有按 10/15/20/25% 升级且错误占槽');
+    for (const id of ['field_bandage', 'chain_arc', 'last_stand']) player.addOrUpgradePassive(PASSIVE_BY_ID[id]);
+    assert(player.passives.length === 4, '四个被动槽没有正确填满');
+    const fullSlotResult = player.addOrUpgradePassive(PASSIVE_BY_ID.phoenix_protocol);
+    assert(fullSlotResult.needsReplacement && !fullSlotResult.applied, '满四槽后新被动绕过了替换流程');
+    assert(player.replacePassive(1, PASSIVE_BY_ID.phoenix_protocol) && player.passives.length === 4 && player.hasPassive('phoenix_protocol'), '被动替换失败或突破四槽上限');
+
+    player.resetProgression();
+    player.hp = player.maxHp * 0.2;
+    player.updatePassiveEffects();
+    assert(!player.lastStandActive && player.getPassiveDamageMultiplier() === 1 && player.getIncomingDamageMultiplier() === 1, '未选择背水一战却获得了其攻防效果');
+    player.addOrUpgradePassive(PASSIVE_BY_ID.last_stand);
+    player.updatePassiveEffects();
+    assert(player.lastStandActive && player.getPassiveDamageMultiplier() === 1.25 && player.getIncomingDamageMultiplier() === 0.8, '选择背水一战后低血量攻防效果未生效');
+
+    // 用户指定的可升级飞弹与吸血数值，以及击杀/移动/灼烧任务进度都必须真实生效。
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
+    const missileTarget = new Enemy(player.x + 160, player.y, 1, 'zombie');
+    enemies = [missileTarget];
+    activeBoss = null;
+    projectiles.length = 0;
+    player.missileCooldown = 0;
+    player.triggerAttackPassives();
+    assert(projectiles.length === 2 && projectiles.every(projectile => projectile.damageSource === 'missile' && projectile.knockback === 0), '金色飞弹没有按 1/2/3/4/5 枚升级或仍有击退');
+    player.resetProgression();
+    for (let i = 0; i < 3; i++) player.addOrUpgradePassive(PASSIVE_BY_ID.blood_pact);
+    assert(getPassiveValue('blood_pact', 3) === 0.09, '炫彩吸血没有按 5/7/9/11/13% 升级');
+    player.hp = player.maxHp - 20;
+    const lifestealTarget = new Enemy(300, 100, 1, 'tank');
+    const hpBeforeLifesteal = player.hp;
+    lifestealTarget.takeDamage(10, 1, 0, 'lifesteal-test', 0, { source: 'weapon' });
+    assert(Math.abs(player.hp - (hpBeforeLifesteal + 0.9)) < 1e-9, '武器直接伤害没有按 9% 吸血');
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.hunter_ledger);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.wayfarer);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.pressure_cooker);
+    player.advancePassiveQuest('hunter_ledger', 20);
+    player.advancePassiveQuest('wayfarer', 2000);
+    player.advancePassiveQuest('pressure_cooker', 800);
+    assert(player.getPassiveStage('hunter_ledger') === 1 && player.getPassiveStage('wayfarer') === 1 && player.getPassiveStage('pressure_cooker') === 1, '击杀、移动或高压锅任务没有阶段成长');
+
+    // 致命主攻击必须先锁定死亡状态，回声打击不得对同一目标递归造成双计击杀。
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.echo_strike);
+    runStats = createRunStats('story');
+    killCount = 0;
+    enemiesRemaining = 1;
+    const echoLethalTarget = new Enemy(320, 100, 1, 'zombie');
+    echoLethalTarget.hp = 1;
+    enemies = [echoLethalTarget];
+    activeBoss = null;
+    player.echoReady = true;
+    echoLethalTarget.takeDamage(20, 1, 0, 'echo-lethal-enemy', 0, { source: 'weapon' });
+    assert(!echoLethalTarget.alive && !player.echoReady && killCount === 1 && runStats.kills === 1 && enemiesRemaining === 0, '致命回声让普通怪重复结算击杀或把回声顺延到下一目标');
+    runStats = createRunStats('story');
+    killCount = 0;
+    enemiesRemaining = 1;
+    const echoLethalBoss = new BirchCorruptBoss(CONFIG.BOSS_WAVE);
+    echoLethalBoss.hp = 1;
+    activeBoss = echoLethalBoss;
+    enemies = [];
+    player.echoReady = true;
+    echoLethalBoss.takeDamage(20, 1, 0, 'echo-lethal-boss', 0, { source: 'weapon' });
+    assert(!echoLethalBoss.alive && !player.echoReady && killCount === 1 && runStats.kills === 1 && runStats.bossKills === 1 && enemiesRemaining === 0, '致命回声让 Boss 重复结算击杀或把回声顺延到下一目标');
+
+    // 刚从普通武器奖励中抽到橙武时，应立即取消剩余碎片资格并转入商店。
+    player.resetProgression();
+    gameState = 'reward';
+    currentRewardType = 'weapon';
+    weaponChoices = [legendarySword];
+    rewardQueue = ['enchant'];
+    chooseReward(0);
+    assert(currentRewardType === 'shop' && rewardQueue.length === 0, '抽到橙武后仍进入普通碎片奖励');
+
     // 无尽死亡生成不可变结算快照，并停止所有音乐。
     runStats = createRunStats('story', 0);
     gameMode = 'endless';
@@ -561,6 +710,9 @@ const assertions = `
     runStats.endlessProjectilesFired = 31;
     runStats.endlessWeaponsClaimed = 2;
     runStats.endlessFragmentsClaimed = 7;
+    runStats.endlessPassivesClaimed = 3;
+    runStats.endlessBirchCoinsEarned = 9;
+    runStats.endlessBirchCoinsSpent = 5;
     runStats.endlessActivePlayMs = 60000;
     player.setWeapon(new Weapon(WEAPON_DATABASE.LEGENDARY.find(item => item.model === 'spear'), 'LEGENDARY'));
     player.upgrades.damage = 14;
@@ -574,6 +726,7 @@ const assertions = `
     assert(lastRunSummary.kills === 23 && lastRunSummary.eliteKills === 4 && lastRunSummary.bossKills === 1, '无尽击杀统计错误');
     assert(lastRunSummary.durationMs === 60000 && lastRunSummary.damageDealt === 1234.5, '无尽时长或伤害统计错误');
     assert(lastRunSummary.weaponsClaimed === 2 && lastRunSummary.fragmentsClaimed === 7, '无尽奖励选择统计错误');
+    assert(lastRunSummary.passivesClaimed === 3 && lastRunSummary.birchCoinsEarned === 9 && lastRunSummary.birchCoinsSpent === 5, '无尽被动或白桦币统计错误');
     assert(!musicPlaying && !bossMusicPlaying && currentMusicKey === null, '死亡后音乐没有全部停止');
     const frozenSummary = lastRunSummary;
     const frozenUpgradeDamage = frozenSummary.upgrades.damage;
@@ -724,6 +877,24 @@ const assertions = `
         stopPropagation() {}
     });
     assert(!manualPaused && !pagePaused && pauseMenuEl.getAttribute('aria-hidden') === 'true', '顶部触屏暂停键无法再次点击恢复游戏');
+
+    // 多指操作时，只能由对应攻击指针的释放结束持续攻击。
+    clearInputState();
+    gameState = 'playing';
+    const attackButton = boundTouchButtons.find(button => button.dataset.action === 'attack');
+    const pointerEvent = (type, pointerId) => ({
+        type,
+        pointerId,
+        preventDefault() {},
+        stopPropagation() {}
+    });
+    attackButton.dispatchEvent(pointerEvent('pointerdown', 31));
+    attackButton.dispatchEvent(pointerEvent('pointerdown', 32));
+    assert(mousePressed && touchActive.attack && touchAttackPointerIds.size === 2, '两个攻击指针没有同时进入活动集合');
+    window.dispatchEvent(pointerEvent('pointerup', 31));
+    assert(mousePressed && touchActive.attack && touchAttackPointerIds.size === 1, '松开一个手指错误中断了另一个手指的持续攻击');
+    window.dispatchEvent(pointerEvent('pointerup', 32));
+    assert(!mousePressed && !touchActive.attack && touchAttackPointerIds.size === 0, '最后一个攻击指针释放后仍残留攻击状态');
     touchPauseButtonEl.dispatchEvent({
         type: 'click',
         preventDefault() {},
@@ -776,6 +947,7 @@ const assertions = `
         const moveGap = cssNumber('--touch-move-gap');
         const offset = cssNumber('--touch-offset');
         const bottom = cssNumber('--touch-bottom');
+        const moveBottom = cssNumber('--touch-move-bottom');
         const actionWidth = cssNumber('--touch-action-width');
         const actionHeight = cssNumber('--touch-action-height');
         const jumpRight = cssNumber('--touch-arc-near');
@@ -791,6 +963,8 @@ const assertions = `
         const clearance = Math.max(4, buttonSize * 0.05);
 
         assert(moveGap === 24, label + ' 的方向键固定间隙不是 24px');
+        assert(moveBottom > bottom, label + ' 的方向键没有独立抬高');
+        assert(attackSize / buttonSize >= 1.12 && attackSize / buttonSize <= 1.22, label + ' 的方向键与攻击键尺寸差距不符合要求');
         assert(reloadCenter.x > attackCenter.x && reloadCenter.x < jumpCenter.x, label + ' 的换弹键没有位于攻击与跳跃之间');
         assert(reloadCenter.y > attackCenter.y, label + ' 的换弹键没有移动到攻击键上方');
         assert(centerDistance(reloadCenter, attackCenter) >= (buttonSize + attackSize) / 2 + clearance - 0.5, label + ' 的换弹键与攻击键重叠');
@@ -799,7 +973,7 @@ const assertions = `
         assert(actionWidth + 0.5 >= Math.max(attackSize, jumpRight + buttonSize, healRight + buttonSize, reloadRight + buttonSize), label + ' 的轮盘宽度没有包住全部按钮');
         assert(actionHeight + 0.5 >= Math.max(attackSize, jumpBottom + buttonSize, healBottom + buttonSize, reloadBottom + buttonSize), label + ' 的轮盘高度没有包住全部按钮');
         assert(buttonSize * 2 + moveGap + actionWidth + offset * 2 + TOUCH_CLUSTER_GAP <= viewportWidth + 0.5, label + ' 的左右操作区发生横向重叠');
-        assert(actionHeight + bottom + TOUCH_EDGE_GAP <= viewportHeight + 0.5, label + ' 的轮盘超出短屏顶部');
+        assert(Math.max(actionHeight + bottom, buttonSize + moveBottom) + TOUCH_EDGE_GAP <= viewportHeight + 0.5, label + ' 的触屏操作区超出短屏顶部');
         assert(['1', '2'].includes(document.documentElement.style.getPropertyValue('--touch-icon-scale')), label + ' 的像素图标使用了连续缩放');
     };
 
