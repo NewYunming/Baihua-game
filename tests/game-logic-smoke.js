@@ -209,9 +209,9 @@ const assertions = `
     assert(rejectedMissingProfile, '缺失远程平衡类型时没有快速报错');
 
     const expectedFragments = {
-        'damage-1': ['damageBonus', 16, '永久攻击力 +16'],
-        'damage-2': ['damageBonus', 28, '永久攻击力 +28'],
-        'damage-3': ['damageBonus', 40, '永久攻击力 +40'],
+        'damage-1': ['damageBonus', 16, '永久攻击力 +16（远程效能 66%）'],
+        'damage-2': ['damageBonus', 28, '永久攻击力 +28（远程效能 66%）'],
+        'damage-3': ['damageBonus', 40, '永久攻击力 +40（远程效能 66%）'],
         'hp-1': ['hpBonus', 24, '永久生命上限 +24'],
         'hp-2': ['hpBonus', 44, '永久生命上限 +44'],
         'hp-3': ['hpBonus', 68, '永久生命上限 +68'],
@@ -231,6 +231,7 @@ const assertions = `
         assert(field && fragment[field] === value && fragment.desc === desc, fragment.id + ' 的数值或描述错误');
         assert(!fragment.desc.includes('翻倍'), fragment.id + ' 出现不应展示的调整说明');
     }
+    assert(CONFIG.RANGED_FRAGMENT_EFFICIENCY === 0.66 && ENCHANT_POOL.filter(fragment => fragment.damageBonus).every(fragment => fragment.desc.includes('远程效能 66%')), '攻击碎片没有明确使用 66% 远程效能');
 
     // 六种地形必须拥有独立音乐主题。
     const biomeMusicKeys = Object.values(BIOMES).map(biome => biome.musicKey);
@@ -299,7 +300,7 @@ const assertions = `
     player.applyEnchant(ENCHANT_POOL.find(fragment => fragment.id === 'ammo-1'));
     player.applyEnchant(ENCHANT_POOL.find(fragment => fragment.id === 'damage-1'));
     assert(player.getMagazineSize() === baseMagazine + 4, '扩容碎片未增加枪械弹容');
-    assert(Math.abs(player.getAttackDamage() - (gun.damage + 5.28)) < 1e-9, '远程 +16 攻击碎片未按 33% 生效');
+    assert(Math.abs(player.getAttackDamage() - (gun.damage + 10.56)) < 1e-9, '远程 +16 攻击碎片未按 66% 生效');
     player.resetProgression();
     const crossbow = new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'crossbow'), 'COMMON');
     player.setWeapon(crossbow);
@@ -337,7 +338,7 @@ const assertions = `
     for (const [data, rarity] of [[bowData, 'COMMON'], [pistolData, 'COMMON'], [autoData, 'RARE'], [shotgunData, 'EPIC']]) {
         const base = measureVolley(data, rarity);
         const upgraded = measureVolley(data, rarity, true);
-        assert(Math.abs((upgraded.totalDamage - base.totalDamage) - 13.2) < 1e-9, data.name + ' 的 +40 远程碎片总增伤不是 13.2');
+        assert(Math.abs((upgraded.totalDamage - base.totalDamage) - 26.4) < 1e-9, data.name + ' 的 +40 远程碎片总增伤不是 26.4');
     }
     const bowShot = measureVolley(bowData, 'COMMON').projectiles[0];
     const pistolShot = measureVolley(pistolData, 'COMMON').projectiles[0];
@@ -379,6 +380,12 @@ const assertions = `
     assert(warden.shield === shieldBeforeHit - 10, '护盾扣减数值错误');
     warden.takeDamage(warden.shield + 5, 1, 4, 'shield-test-2');
     assert(warden.shield === 0 && warden.hp === hpBeforeShieldHit - 5, '破盾溢出伤害未进入生命');
+    const damagedShieldWarden = new Enemy(0, findGroundYAt(0, ENEMY_TYPES.warden.height), 3, 'warden');
+    damagedShieldWarden.takeDamage(10, 0, 0, 'shield-no-regen');
+    const shieldAfterDamage = damagedShieldWarden.shield;
+    damagedShieldWarden.aggro = false;
+    for (let frame = 0; frame < 600; frame++) damagedShieldWarden.update({ x: 1000, y: 0, width: 24, height: 32, takeDamage() {} });
+    assert(damagedShieldWarden.shield === shieldAfterDamage, '护盾精英脱战后仍会回复护盾');
 
     // 激光与护盾精英在同一波中各自最多出现一个；跃袭尸属于普通怪。
     assert(ENEMY_TYPES.leaper.leaper && !ENEMY_TYPES.leaper.elite, '跃袭尸没有作为普通怪接入');
@@ -405,6 +412,10 @@ const assertions = `
     const strengthAt21 = new Enemy(0, 0, 21, 'zombie');
     const strengthAt31 = new Enemy(0, 0, 31, 'zombie');
     assert(strengthAt31.maxHp > strengthAt21.maxHp && strengthAt31.damage > strengthAt21.damage, '达到数量上限后怪物强度没有继续增长');
+    const strengthAt100 = new Enemy(0, 0, 100, 'zombie');
+    const wardenAt100 = new Enemy(0, 0, 100, 'warden');
+    assert(strengthAt100.maxHp < ENEMY_TYPES.zombie.baseHp * 8 && strengthAt100.damage < ENEMY_TYPES.zombie.baseDmg * 5, '无尽 100 波数值仍然过度膨胀');
+    assert(wardenAt100.maxHp + wardenAt100.maxShield < 2300 && wardenAt100.maxShield <= ENEMY_TYPES.warden.shield * 4, '无尽 100 波护盾精英总耐久仍然过高');
     assert(!ENEMY_SPAWN_TABLE.some(entry => entry.type === 'chaos'), '无尽随机混沌怪仍在出生表中');
     gameMode = 'endless';
     currentWave = 21;
@@ -413,13 +424,15 @@ const assertions = `
     Math.random = originalRandomForSpawns;
     assert(enemies.length === 20 && enemies.every(enemy => enemy.type !== 'chaos'), '无尽普通波未遵守 20 只固定怪物上限');
 
-    // 每张地图随机决定左右入口，两个方向都必须能正常落地并面向地图内部。
+    // 玩家固定出生在地图中央，怪物必须分布在左右两侧。
     positionPlayerAtWaveEntrance(() => 0);
-    const leftSpawnX = player.x;
-    assert(mapTravelDirection === 1 && player.facing === 1 && leftSpawnX < MAP_WIDTH * CONFIG.TILE_SIZE / 2, '左到右入口失效');
-    positionPlayerAtWaveEntrance(() => 0.999);
-    assert(mapTravelDirection === -1 && player.facing === -1 && player.x > MAP_WIDTH * CONFIG.TILE_SIZE / 2, '右到左入口失效');
     const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+    assert(Math.abs((player.x + player.width / 2) - worldWidth / 2) < 1 && mapTravelDirection === 0, '玩家没有出生在地图正中央');
+    currentWave = 3;
+    Math.random = () => 0.5;
+    spawnEnemiesForWave();
+    Math.random = originalRandomForSpawns;
+    assert(enemies.some(enemy => enemy.x < worldWidth / 2) && enemies.some(enemy => enemy.x > worldWidth / 2), '怪物没有同时从玩家左右两侧生成');
     player.x = -1;
     player.y = findGroundYAt(0, player.height) - 2;
     player.vx = 0;
@@ -434,9 +447,37 @@ const assertions = `
     player.update();
     assert(player.x === 0 && player.y === findGroundYAt(player.width / 2, player.height) - 2, '玩家跨出右边缘后没有从左侧安全落地');
 
+    const wrappedEnemy = new Enemy(-1, findGroundYAt(0, ENEMY_TYPES.zombie.height) - 2, 1, 'zombie');
+    wrappedEnemy.aggro = false;
+    wrappedEnemy.update({ x: 1000, y: 0, width: 24, height: 32, takeDamage() {} });
+    assert(wrappedEnemy.x === worldWidth - wrappedEnemy.width, '怪物跨出左边缘后没有从右侧进入');
+    const sleepingEnemy = new Enemy(0, 100, 1, 'zombie');
+    const sleepingX = sleepingEnemy.x;
+    sleepingEnemy.update({ x: 900, y: 100, width: 24, height: 32, takeDamage() {} });
+    assert(!sleepingEnemy.aggro && sleepingEnemy.x === sleepingX, '远处未发现玩家的怪物仍在全图追击');
+    sleepingEnemy.takeDamage(1, 0, 0, 'aggro-hit');
+    assert(sleepingEnemy.aggro, '怪物受到玩家攻击后没有进入追击状态');
+    sleepingEnemy.knockbackTimer = 0;
+    sleepingEnemy.update({ x: 180, y: 100, width: 24, height: 32, takeDamage() {} });
+    assert(sleepingEnemy.vx > 0, '怪物进入仇恨后没有开始追逐玩家');
+    camera.x = 2200;
+    const seamShooter = new Enemy(10, 100, 1, 'shooter');
+    seamShooter.aggro = true;
+    seamShooter.update({ x: worldWidth - 20, y: 100, width: 24, height: 32, takeDamage() {} });
+    assert(seamShooter.vx < 0, '屏外远程怪没有先跨接缝追到可见侧');
+    assert(getWrappedDeltaX(10, worldWidth - 10) === -20 && getWrappedDeltaX(worldWidth - 10, 10) === 20, '环形 AI 没有选择跨接缝的最短方向');
+    const wrappedProjectile = new Projectile(1, 100, -4, 0, 1, '#fff', 'enemy', { gravity: 0 });
+    wrappedProjectile.update();
+    assert(wrappedProjectile.x === worldWidth - 3 && wrappedProjectile.life > 0, '跨接缝的敌方投射物没有从另一侧继续飞行');
+
     // 宝箱奖励严格为 1-5；宝箱怪不在普通出生表中，并在显形时计入怪物上限。
     assert(rollBirchCoinReward(() => 0) === 1 && rollBirchCoinReward(() => 0.999) === 5, '白桦币奖励不在 1-5 范围');
     assert(!ENEMY_SPAWN_TABLE.some(entry => entry.type === 'mimic'), '宝箱怪被错误加入普通出生表');
+    const testColumn = 8;
+    const baseGroundY = findGroundYAt(testColumn * CONFIG.TILE_SIZE + 16, 0);
+    tiles[4][testColumn] = 1;
+    assert(findGroundYAt(testColumn * CONFIG.TILE_SIZE + 16, 0) === baseGroundY, '出生落点错误吸附到不可达浮空平台');
+    assert(getReachableChestSpots().length > 0, '地图没有为宝箱保留可达的底部连通落点');
     birchCoins = 0;
     const normalChest = new TreasureChest(100, 100, 5, false, 5);
     assert(normalChest.takeDamage('open-normal') && birchCoins === 5 && normalChest.opened, '普通宝箱没有发放白桦币');
@@ -460,7 +501,7 @@ const assertions = `
     update();
     assert(birchCoins === 3, '已死亡宝箱怪重复掉落白桦币');
 
-    // 清场会保底处理未开启宝箱；普通箱直接结算，伪装箱则唤醒并阻止提前过关。
+    // 清场后必须等待玩家亲自开箱；普通箱开启后才结算，伪装箱被攻击后才苏醒。
     runStats = createRunStats('story');
     currentWave = 2;
     gameState = 'playing';
@@ -471,7 +512,10 @@ const assertions = `
     birchCoins = 0;
     treasureChest = new TreasureChest(180, 100, 2, false, 2);
     update();
-    assert(treasureChest.opened && birchCoins === 2, '清场后未开启的普通宝箱被切图吞掉');
+    assert(!treasureChest.opened && birchCoins === 0 && gameState === 'playing' && waveObjective === 'chest' && !waveCompletionHandled, '清场后没有等待玩家找到并开启普通宝箱');
+    treasureChest.takeDamage('player-opens-normal');
+    update();
+    assert(treasureChest.opened && birchCoins === 2 && gameState === 'reward', '玩家开启普通宝箱后没有结算波次');
     gameState = 'playing';
     waveCompletionHandled = false;
     enemies = [];
@@ -479,7 +523,23 @@ const assertions = `
     totalEnemiesInWave = 0;
     treasureChest = new TreasureChest(180, 100, 2, true, 4);
     update();
-    assert(gameState === 'playing' && enemiesRemaining === 1 && enemies.length === 1 && enemies[0].type === 'mimic', '清场保底开启宝箱怪后仍提前进入下一波');
+    assert(!treasureChest.opened && enemiesRemaining === 0 && enemies.length === 0, '未攻击的宝箱怪被清场流程自动唤醒');
+    treasureChest.takeDamage('player-opens-mimic');
+    assert(gameState === 'playing' && enemiesRemaining === 1 && enemies.length === 1 && enemies[0].type === 'mimic', '玩家攻击宝箱怪后没有进入继续战斗状态');
+
+    player.setWeapon(new Weapon(WEAPON_DATABASE.LEGENDARY[0], 'LEGENDARY'));
+    gameState = 'playing';
+    currentRewardType = 'weapon';
+    waveCompletionHandled = false;
+    enemies = [];
+    enemiesRemaining = 0;
+    totalEnemiesInWave = 0;
+    treasureChest = new TreasureChest(180, 100, 2, false, 1);
+    update();
+    assert(gameState === 'playing' && currentRewardType !== 'shop', '橙武玩家未开宝箱就提前进入白桦商店');
+    treasureChest.takeDamage('legendary-player-opens');
+    update();
+    assert(gameState === 'reward' && currentRewardType === 'shop' && shopView === 'menu', '橙武玩家亲手开箱后没有进入白桦商店');
     treasureChest = null;
     enemies = [];
     gameMode = 'story';
@@ -609,12 +669,123 @@ const assertions = `
     birchCoins = 4;
     assert(!openShopPassivePack('PRISMATIC') && birchCoins === 4, '余额不足仍购买了炫彩技能包');
 
-    // 18 个被动分成银/金/炫彩三档；同名升级不占槽，新被动满槽时必须替换。
-    assert(PASSIVE_LIBRARY.length >= 18, '银/金/炫彩被动种类不足');
+    // 36 个被动分成银/金/炫彩三档；同名升级不占槽，新被动满槽时必须替换。
+    assert(PASSIVE_LIBRARY.length >= 36, '银/金/炫彩被动种类不足 36 个');
     for (const tier of Object.keys(PASSIVE_TIERS)) {
-        assert(PASSIVE_LIBRARY.filter(passive => passive.tier === tier).length >= 6, tier + ' 被动少于 6 个');
+        assert(PASSIVE_LIBRARY.filter(passive => passive.tier === tier).length >= 12, tier + ' 被动少于 12 个');
     }
+    assert(new Set(PASSIVE_LIBRARY.map(passive => passive.id)).size === PASSIVE_LIBRARY.length, '被动 ID 出现重复');
+    assert(new Set(PASSIVE_LIBRARY.map(passive => passive.icon)).size === PASSIVE_LIBRARY.length, '被动专属 Logo 出现重复');
+    assert(PASSIVE_LIBRARY.every(passive => passive.icon && passive.descriptions?.length), '存在没有专属 Logo 或详细描述的被动');
     assert(PASSIVE_TIERS.SILVER.cost === 1 && PASSIVE_TIERS.GOLD.cost === 3 && PASSIVE_TIERS.PRISMATIC.cost === 5, '三档技能包价格不是 1/3/5');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.shield_wedge);
+    const wedgeTarget = new Enemy(200, 100, 1, 'warden');
+    const wedgeHp = wedgeTarget.hp;
+    const wedgeShield = wedgeTarget.shield;
+    wedgeTarget.takeDamage(20, 0, 0, 'wedge-test');
+    assert(wedgeTarget.shield === wedgeShield - 25 && wedgeTarget.hp === wedgeHp, '破盾楔没有只对护盾追加 25% 伤害');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.overheal_aegis);
+    player.hp = player.maxHp;
+    player.heal(20);
+    assert(player.tempShield === player.maxHp * 0.08, '过量治疗没有按 50% 转化并遵守 8% 临时盾上限');
+    gameState = 'playing';
+    player.invincible = 0;
+    const hpBeforeAegis = player.hp;
+    player.takeDamage(6, 'aegis-test');
+    assert(player.hp === hpBeforeAegis && player.tempShield === player.maxHp * 0.08 - 6, '临时护盾没有优先吸收玩家伤害');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.locksmith);
+    player.advancePassiveQuest('locksmith', 2);
+    birchCoins = 0;
+    const locksmithChest = new TreasureChest(100, 100, 1, false, 5);
+    locksmithChest.takeDamage('locksmith-bonus');
+    assert(birchCoins === 6, '开锁匠额外白桦币被基础 1-5 上限吞掉');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.keen_edge);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.jeweled_arms);
+    const randomBeforeJeweled = Math.random;
+    Math.random = () => 0;
+    const jeweledPassiveHit = player.resolveOutgoingDamage(10, null, { source: 'passive-test', passiveDamage: true, canCrit: false });
+    Math.random = randomBeforeJeweled;
+    assert(jeweledPassiveHit.critical && jeweledPassiveHit.damage === 17, '珠光武装没有让被动伤害按一半暴击率暴击');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.patient_strike);
+    player.patientStrikeArmed = true;
+    player.replacePassive(0, PASSIVE_BY_ID.field_bandage);
+    const replacedPatientHit = player.resolveOutgoingDamage(10, null, { source: 'weapon' });
+    assert(!player.patientStrikeArmed && replacedPatientHit.damage === 10, '替换蓄势一击后仍泄漏一次 +30% 伤害');
+
+    player.resetProgression();
+    player.hp = player.maxHp / 2;
+    player.addOrUpgradePassive(PASSIVE_BY_ID.colossus_core);
+    const boostedRatio = player.hp / player.maxHp;
+    player.passives = [];
+    player.setWeapon(player.weapon);
+    assert(Math.abs(player.hp / player.maxHp - boostedRatio) < 0.011, '移除生命上限被动时利用比例错误回复了生命');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.frost_brand);
+    const frostTarget = new Enemy(260, 100, 1, 'zombie');
+    player.onDamageDealt(5, frostTarget, { source: 'weapon' });
+    assert(frostTarget.slowRatio === 0.12 && frostTarget.slowTimer === 90, '霜印没有对武器命中的普通怪施加减速');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.combat_rhythm);
+    for (let attack = 0; attack < 5; attack++) player.triggerAttackPassives();
+    assert(player.rhythmTimer === 240, '战斗节拍没有在第 5 次近战攻击后启动');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.counter_window);
+    const counterTarget = new Enemy(player.x + 40, player.y, 1, 'tank');
+    enemies = [counterTarget];
+    activeBoss = null;
+    gameState = 'playing';
+    player.hp = player.maxHp;
+    player.invincible = 0;
+    player.counterWindow = 30;
+    const counterHpBefore = counterTarget.hp;
+    player.takeDamage(10, 'counter-test');
+    assert(player.hp === player.maxHp - 6.5 && counterTarget.hp < counterHpBefore && player.counterCooldown === 180, '反击窗口的减伤、反击或冷却没有生效');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.flawless_route);
+    player.resetMapPassives();
+    player.completeMapPassives();
+    player.resetMapPassives();
+    assert(player.getPassiveStage('flawless_route') === 1 && player.flawlessActive && player.getMoveSpeed() > CONFIG.PLAYER_SPEED, '无伤远征没有在无伤清图后进化并启用新图加成');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.gravity_heart);
+    const gravityTarget = new Enemy(player.x + 120, player.y, 1, 'zombie');
+    enemies = [gravityTarget];
+    gravityTarget.skillCooldown = 10;
+    player.triggerGravityHeart();
+    assert(gravityTarget.knockbackTimer > 0 && gravityTarget.skillCooldown === 40, '引力之心没有拉近敌人并延后技能');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.birch_syndicate);
+    player.advancePassiveQuest('birch_syndicate', 5);
+    enemies = [new Enemy(player.x + 150, player.y, 1, 'tank')];
+    projectiles.length = 0;
+    player.launchSyndicateBlades(1);
+    assert(projectiles.length === 1 && projectiles[0].damageSource === 'syndicate', '白桦财团没有发射环绕金币刃');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.world_walker);
+    const walkerTarget = new Enemy(player.x + 60, player.y, 1, 'tank');
+    enemies = [walkerTarget];
+    const walkerHpBefore = walkerTarget.hp;
+    assert(player.triggerWorldWalker() && player.invincible >= 24 && walkerTarget.hp < walkerHpBefore, '世界行者没有在有效环回时释放冲击波与无敌');
+    enemies = [];
+    projectiles.length = 0;
+
     player.resetProgression();
     const keenEdge = PASSIVE_BY_ID.keen_edge;
     for (let level = 1; level <= 4; level++) assert(player.addOrUpgradePassive(keenEdge).applied, '锋刃校准升级失败');
@@ -832,6 +1003,37 @@ const assertions = `
 
     restartGame();
     disableTouchMode();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.keen_edge);
+    const passiveHudRects = getPassiveHudRects();
+    assert(passiveHudRects.length === 4 && passiveHudRects.every(rect => rect.y + rect.h <= CONFIG.CANVAS_HEIGHT && rect.y >= CONFIG.CANVAS_HEIGHT - 90), '四个被动槽没有固定在画布最下方');
+    assert(passiveHudRects.every((rect, index) => index === 0 || rect.x >= passiveHudRects[index - 1].x + passiveHudRects[index - 1].w), '底部被动槽发生重叠');
+    const firstPassiveRect = passiveHudRects[0];
+    canvas.dispatchEvent({
+        type: 'pointerdown', button: 0, pointerType: 'mouse', pointerId: 701,
+        clientX: firstPassiveRect.x + firstPassiveRect.w / 2,
+        clientY: firstPassiveRect.y + firstPassiveRect.h / 2,
+        preventDefault() {}
+    });
+    assert(passiveDetailsOpen && pagePaused && !manualPaused, '点击底部被动没有打开独立详情暂停层');
+    assert(canvasAttackPointerIds.size === 0 && !mousePressed, '点击被动槽同时触发了攻击');
+    const passivePauseX = player.x;
+    gameLoop(previousFrameTime + FIXED_STEP_MS * 2);
+    assert(player.x === passivePauseX && passiveDetailsOpen, '绘制被动详情时游戏逻辑没有保持暂停');
+    dispatchKey('Digit2');
+    assert(selectedPassiveSlot === 1, '详情页无法用数字键切换四个被动槽');
+    dispatchKey('Escape');
+    assert(!passiveDetailsOpen && !pagePaused && !manualPaused, 'Esc 关闭被动详情时错误打开了普通暂停菜单');
+    assert(SHOP_MENU_BUTTONS.weapon.w === SHOP_MENU_BUTTONS.fragment.w && SHOP_MENU_BUTTONS.weapon.y < SHOP_MENU_BUTTONS.fragment.y, '商店武器与碎片没有采用两条图形横排');
+    assert(SHOP_MENU_BUTTONS.silver.y === SHOP_MENU_BUTTONS.gold.y && SHOP_MENU_BUTTONS.gold.y === SHOP_MENU_BUTTONS.prismatic.y, '银/金/炫彩卡包没有排成同一行');
+    assert(SHOP_MENU_BUTTONS.leave.x > SHOP_MENU_BUTTONS.prismatic.x && SHOP_MENU_BUTTONS.leave.y > SHOP_MENU_BUTTONS.prismatic.y, '离开地图按钮没有位于商店右下角');
+    assert(PRISMATIC_COLORS.length >= 5 && typeof createPrismaticGradient === 'function' && typeof drawTierFrame === 'function', '炫彩 UI 没有统一的流光渐变入口');
+    birchCoins = 10;
+    shopFragmentClaimed = false;
+    drawBirchShopMenu();
+    shopPackTier = 'PRISMATIC';
+    shopChoices = PASSIVE_LIBRARY.filter(passive => passive.tier === 'PRISMATIC').slice(0, 3);
+    drawBirchShopPassives();
+    shopChoices = [];
     const pauseKey = dispatchKey('Escape');
     assert(pauseKey.defaultPrevented && manualPaused && pagePaused, 'Esc 没有暂停战斗');
     assert(pauseMenuEl.getAttribute('aria-hidden') === 'false', 'Esc 暂停后菜单没有显示');
