@@ -717,6 +717,13 @@
             AUTOMATIC_DAMAGE_MULTIPLIER: 0.35,
             BOW_DAMAGE_MULTIPLIER: 2,
             RANGED_FRAGMENT_EFFICIENCY: 0.66,
+            // 被动技能直接吃玩家当前面板攻击力，保证武器与碎片成长会同步放大技能。
+            MISSILE_ATTACK_COEFFICIENT: 0.22,
+            PRESSURE_ATTACK_COEFFICIENT: 0.12,
+            // 在不回到后期血量海绵的前提下，小幅提高怪物基础威胁。
+            ENEMY_GLOBAL_HP_MULTIPLIER: 1.15,
+            ENEMY_GLOBAL_DAMAGE_MULTIPLIER: 1.12,
+            ENEMY_GLOBAL_SPEED_MULTIPLIER: 1.04,
             LASER_CHARGE_FRAMES: 72,
             LASER_FIRE_FRAMES: 14
         };
@@ -1039,9 +1046,9 @@
             { id: 'hp-1', name: '生命碎片 I', class: 'all', hpBonus: 24, desc: '永久生命上限 +24', color: '#81C784' },
             { id: 'hp-2', name: '生命碎片 II', class: 'all', hpBonus: 44, desc: '永久生命上限 +44', color: '#66BB6A' },
             { id: 'hp-3', name: '生命碎片 III', class: 'all', hpBonus: 68, desc: '永久生命上限 +68', color: '#43A047' },
-            { id: 'range-1', name: '延展碎片 I', class: 'melee', rangeBonus: 14, desc: '近战攻击距离 +14', color: '#64B5F6' },
-            { id: 'range-2', name: '延展碎片 II', class: 'melee', rangeBonus: 24, desc: '近战攻击距离 +24', color: '#42A5F5' },
-            { id: 'range-3', name: '延展碎片 III', class: 'melee', rangeBonus: 36, desc: '近战攻击距离 +36', color: '#1E88E5' },
+            { id: 'range-1', name: '延展碎片 I', class: 'melee', rangeBonus: 14, desc: `近战攻击距离 ${formatSignedTileDistance(14)}`, color: '#64B5F6' },
+            { id: 'range-2', name: '延展碎片 II', class: 'melee', rangeBonus: 24, desc: `近战攻击距离 ${formatSignedTileDistance(24)}`, color: '#42A5F5' },
+            { id: 'range-3', name: '延展碎片 III', class: 'melee', rangeBonus: 36, desc: `近战攻击距离 ${formatSignedTileDistance(36)}`, color: '#1E88E5' },
             { id: 'ammo-1', name: '扩容碎片 I', class: 'ranged', ammoBonus: 4, desc: '远程弹药容量 +4', color: '#80CBC4' },
             { id: 'ammo-2', name: '扩容碎片 II', class: 'ranged', ammoBonus: 8, desc: '远程弹药容量 +8', color: '#4DB6AC' },
             { id: 'ammo-3', name: '扩容碎片 III', class: 'ranged', ammoBonus: 12, desc: '远程弹药容量 +12', color: '#26A69A' },
@@ -1097,8 +1104,8 @@
             },
             {
                 id: 'wayfarer', icon: 'winged-boot', name: '远行者', tier: 'SILVER', mode: 'quest', maxLevel: 1,
-                questThresholds: [2000, 6000, 12000], questBonuses: [0.04, 0.08, 0.12],
-                descriptions: ['任务：累计移动 2000/6000/12000 像素，移动速度逐级提升']
+                questThresholds: [1920, 6080, 12000], questBonuses: [0.04, 0.08, 0.12],
+                descriptions: ['任务：累计移动 60/190/375 格，移动速度逐级提升']
             },
             {
                 id: 'field_bandage', icon: 'cross-bandage', name: '战地绷带', tier: 'SILVER', mode: 'unique', maxLevel: 1,
@@ -1107,12 +1114,18 @@
             {
                 id: 'missile_barrage', icon: 'missile-fan', name: '白桦弹幕', tier: 'GOLD', mode: 'stack', maxLevel: 5,
                 values: [1, 2, 3, 4, 5],
-                descriptions: ['攻击附带 1 枚飞弹', '攻击附带 2 枚飞弹', '攻击附带 3 枚飞弹', '攻击附带 4 枚飞弹', '攻击附带 5 枚飞弹']
+                descriptions: [
+                    '每次攻击发射 1 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
+                    '每次攻击发射 2 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
+                    '每次攻击发射 3 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
+                    '每次攻击发射 4 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
+                    '每次攻击发射 5 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%'
+                ]
             },
             {
                 id: 'pressure_cooker', icon: 'pressure-flame', name: '高压锅', tier: 'GOLD', mode: 'quest', maxLevel: 1,
                 questThresholds: [800, 2400, 6000], questBonuses: [1, 2, 3],
-                descriptions: ['任务：靠近敌人持续灼烧；累计灼烧伤害提升范围、频率与层数']
+                descriptions: ['任务：靠近敌人持续灼烧；每层造成当前武器一次攻击总伤害的 12%，累计伤害提升范围、频率与层数']
             },
             {
                 id: 'chain_arc', icon: 'trident-lightning', name: '连锁电弧', tier: 'GOLD', mode: 'unique', maxLevel: 1,
@@ -1170,7 +1183,7 @@
             },
             {
                 id: 'patient_strike', icon: 'hourglass-sword', name: '蓄势一击', tier: 'SILVER', mode: 'unique', maxLevel: 1,
-                descriptions: ['120 帧未攻击后，下一次武器命中伤害 +30%']
+                descriptions: ['停止攻击 2 秒后，下一次武器命中伤害 +30%']
             },
             {
                 id: 'rooted_guard', icon: 'stone-stance', name: '磐石架势', tier: 'SILVER', mode: 'unique', maxLevel: 1,
@@ -1179,7 +1192,7 @@
             {
                 id: 'longshot_calibration', icon: 'longshot-scope', name: '远距校准', tier: 'SILVER', mode: 'quest', maxLevel: 1,
                 questThresholds: [20, 60, 150], questBonuses: [0.06, 0.12, 0.20],
-                descriptions: ['任务：在 220 像素外命中 20/60/150 次，远距伤害逐级 +6/12/20%']
+                descriptions: ['任务：在 7 格外命中 20/60/150 次，远距伤害逐级 +6/12/20%']
             },
             {
                 id: 'locksmith', icon: 'key-chest', name: '开锁匠', tier: 'SILVER', mode: 'quest', maxLevel: 1,
@@ -1202,7 +1215,7 @@
             },
             {
                 id: 'counter_window', icon: 'counter-blades', name: '反击窗口', tier: 'GOLD', mode: 'unique', maxLevel: 1,
-                descriptions: ['攻击后 30 帧内受伤时减免 35%，并反击最近敌人；冷却 180 帧']
+                descriptions: ['攻击后 0.5 秒内受伤时减免 35%，并反击最近敌人；冷却 3 秒']
             },
             {
                 id: 'flawless_route', icon: 'flawless-halo', name: '无伤远征', tier: 'GOLD', mode: 'quest', maxLevel: 1,
@@ -1220,7 +1233,7 @@
             },
             {
                 id: 'gravity_heart', icon: 'gravity-orbit', name: '引力之心', tier: 'PRISMATIC', mode: 'unique', maxLevel: 1,
-                descriptions: ['每 270 帧释放引力脉冲，拉近 280 像素内普通/精英敌人并延后技能；Boss 免疫']
+                descriptions: ['每 4.5 秒释放引力脉冲，拉近 9 格内普通/精英敌人并延后技能；Boss 免疫']
             },
             {
                 id: 'overheal_aegis', icon: 'heart-aegis', name: '过量护盾', tier: 'PRISMATIC', mode: 'stack', maxLevel: 5,
@@ -1367,6 +1380,10 @@
                 this.drag = options.drag ?? 0.98;
                 this.glow = options.glow || 0;
                 this.shape = options.shape || 'square';
+                this.rotation = options.rotation || 0;
+                this.spin = options.spin || 0;
+                this.shrink = options.shrink ?? 0.35;
+                this.additive = Boolean(options.additive);
             }
 
             update() {
@@ -1375,6 +1392,7 @@
                 this.vx *= this.drag;
                 this.vy *= this.drag;
                 this.vy += this.gravity;
+                this.rotation += this.spin;
                 this.life--;
                 return this.life > 0;
             }
@@ -1384,19 +1402,46 @@
                 ctx.save();
                 ctx.globalAlpha = alpha;
                 ctx.fillStyle = this.color;
+                if (this.additive && !reducedMotion) ctx.globalCompositeOperation = 'lighter';
                 if (this.glow) {
                     ctx.shadowColor = this.color;
                     ctx.shadowBlur = this.glow;
                 }
-                if (this.shape === 'circle') {
+                const drawSize = Math.max(0.4, this.size * (1 - this.shrink * (1 - alpha)));
+                const screenX = getNearestWrappedScreenX(this.x);
+                const screenY = this.y - camera.y;
+                ctx.translate(screenX, screenY);
+                ctx.rotate(this.rotation);
+                if (this.shape === 'circle' || this.shape === 'smoke') {
                     ctx.beginPath();
-                    ctx.arc(this.x - camera.x, this.y - camera.y, this.size, 0, Math.PI * 2);
+                    ctx.arc(0, 0, drawSize, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (this.shape === 'spark') {
+                    ctx.fillRect(-drawSize * 2.2, -drawSize * 0.35, drawSize * 4.4, drawSize * 0.7);
+                    ctx.fillRect(-drawSize * 0.35, -drawSize * 2.2, drawSize * 0.7, drawSize * 4.4);
+                } else if (this.shape === 'diamond') {
+                    ctx.beginPath();
+                    ctx.moveTo(0, -drawSize * 1.7);
+                    ctx.lineTo(drawSize, 0);
+                    ctx.lineTo(0, drawSize * 1.7);
+                    ctx.lineTo(-drawSize, 0);
+                    ctx.closePath();
                     ctx.fill();
                 } else {
-                    ctx.fillRect(this.x - camera.x, this.y - camera.y, this.size, this.size);
+                    ctx.fillRect(-drawSize / 2, -drawSize / 2, drawSize, drawSize);
                 }
                 ctx.restore();
             }
+        }
+
+        function getParticleBudget() {
+            if (reducedMotion) return 90;
+            return touchMode ? 260 : 460;
+        }
+
+        function enforceParticleBudget() {
+            const excess = particles.length - getParticleBudget();
+            if (excess > 0) particles.splice(0, excess);
         }
 
         function spawnAttackParticles(x, y, color, count = 8) {
@@ -1407,9 +1452,11 @@
                     x, y, color,
                     Math.cos(angle) * speed,
                     Math.sin(angle) * speed - 2,
-                    20 + Math.random() * 15
+                    20 + Math.random() * 15,
+                    { shape: i % 3 === 0 ? 'spark' : 'diamond', glow: 5, spin: (Math.random() - 0.5) * 0.2, additive: true }
                 ));
             }
+            enforceParticleBudget();
         }
 
         function spawnImpactParticles(x, y, color, count = 10, power = 1) {
@@ -1421,9 +1468,92 @@
                     Math.cos(angle) * speed,
                     Math.sin(angle) * speed,
                     16 + Math.random() * 18,
-                    { size: 1.5 + Math.random() * 2.8, gravity: 0.04, drag: 0.94, glow: 5 }
+                    { size: 1.5 + Math.random() * 2.8, gravity: 0.04, drag: 0.94, glow: 5, shape: i % 4 === 0 ? 'spark' : 'diamond', spin: (Math.random() - 0.5) * 0.24, additive: true }
                 ));
             }
+            enforceParticleBudget();
+        }
+
+        const combatEffects = [];
+
+        class CombatEffect {
+            constructor(type, x, y, color, options = {}) {
+                this.type = type;
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.life = options.life || 24;
+                this.maxLife = this.life;
+                this.radius = options.radius || 36;
+                this.startRadius = options.startRadius || 6;
+                this.angle = options.angle || 0;
+                this.arc = options.arc || Math.PI * 0.9;
+                this.width = options.width || 4;
+                this.length = options.length || 90;
+            }
+
+            update() {
+                this.life--;
+                return this.life > 0;
+            }
+
+            draw(ctx) {
+                const progress = 1 - this.life / this.maxLife;
+                const alpha = Math.sin(Math.min(1, progress) * Math.PI);
+                const sx = getNearestWrappedScreenX(this.x);
+                const sy = this.y - camera.y;
+                ctx.save();
+                ctx.globalCompositeOperation = reducedMotion ? 'source-over' : 'lighter';
+                ctx.globalAlpha = alpha * 0.82;
+                ctx.strokeStyle = this.color;
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = reducedMotion ? 4 : 13;
+                if (this.type === 'ring') {
+                    const radius = this.startRadius + (this.radius - this.startRadius) * progress;
+                    ctx.lineWidth = Math.max(1, this.width * (1 - progress));
+                    ctx.beginPath(); ctx.arc(sx, sy, radius, 0, Math.PI * 2); ctx.stroke();
+                } else if (this.type === 'slash') {
+                    ctx.translate(sx, sy);
+                    ctx.rotate(this.angle);
+                    ctx.lineWidth = this.width * (1 - progress * 0.55);
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * (0.84 + progress * 0.22), -this.arc / 2, this.arc / 2);
+                    ctx.stroke();
+                    ctx.globalAlpha *= 0.38;
+                    ctx.lineWidth *= 2.7;
+                    ctx.stroke();
+                } else if (this.type === 'beam') {
+                    ctx.translate(sx, sy);
+                    ctx.rotate(this.angle);
+                    const gradient = ctx.createLinearGradient(0, 0, this.length, 0);
+                    gradient.addColorStop(0, '#FFFFFF');
+                    gradient.addColorStop(0.25, this.color);
+                    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, -this.width / 2, this.length * (0.5 + progress * 0.5), this.width);
+                }
+                ctx.restore();
+            }
+        }
+
+        function addCombatEffect(effect) {
+            combatEffects.push(effect);
+            const budget = reducedMotion ? 20 : (touchMode ? 48 : 84);
+            if (combatEffects.length > budget) combatEffects.splice(0, combatEffects.length - budget);
+            return effect;
+        }
+
+        function spawnShockwave(x, y, color, radius = 52, life = 24, width = 5) {
+            return addCombatEffect(new CombatEffect('ring', x, y, color, { radius, life, width }));
+        }
+
+        function spawnSlashBurst(x, y, color, angle, radius = 64, arc = Math.PI * 0.9) {
+            return addCombatEffect(new CombatEffect('slash', x, y, color, { angle, radius, arc, life: 18, width: 5 }));
+        }
+
+        function spawnEnergyBeam(x, y, color, angle, length = 110, width = 8) {
+            return addCombatEffect(new CombatEffect('beam', x, y, color, { angle, length, width, life: 12 }));
         }
 
         const floatingTexts = [];
@@ -1447,7 +1577,7 @@
             draw(ctx) {
                 ctx.save();
                 ctx.globalAlpha = Math.min(1, this.life / 12);
-                const screenX = this.x - camera.x;
+                const screenX = getNearestWrappedScreenX(this.x);
                 const screenY = this.y - camera.y;
                 if (this.color === 'prismatic') {
                     ctx.fillStyle = createPrismaticGradient({ x: screenX - 60, y: screenY - this.size, w: 120, h: this.size * 2 }, performance.now());
@@ -1473,8 +1603,12 @@
             tank: { name: '蛮兽人', baseHp: 90, baseDmg: 14, speed: 0.8, color: '#5E7937', accent: '#9CAF55', width: 34, height: 42, knockResist: 1.5, skill: 'slam' },
             shooter: { name: '骷髅弓手', baseHp: 45, baseDmg: 12, speed: 1.0, color: '#D6C9A5', accent: '#8FA9C9', width: 27, height: 32, knockResist: 1, ranged: true, skill: 'boneArrow', shootInterval: 112 },
             leaper: { name: '洞穴毒蛛', baseHp: 42, baseDmg: 11, speed: 1.38, color: '#6D2945', accent: '#D15B72', width: 30, height: 24, knockResist: 0.72, leaper: true, skill: 'pounce' },
+            charger: { name: '狂角战兽', baseHp: 84, baseDmg: 16, speed: 1.12, color: '#74462F', accent: '#E0B46B', width: 36, height: 31, knockResist: 1.35, skill: 'hornCharge' },
+            bombardier: { name: '腐沼投弹手', baseHp: 58, baseDmg: 14, speed: 0.86, color: '#4D693A', accent: '#C6FF55', width: 29, height: 34, knockResist: 1.05, ranged: true, skill: 'toxicBomb', shootInterval: 138 },
+            warlock: { name: '虚空术士', baseHp: 64, baseDmg: 15, speed: 0.9, color: '#47355F', accent: '#B388FF', width: 29, height: 37, knockResist: 1.08, ranged: true, skill: 'shadowVolley', shootInterval: 126 },
             warden: { name: '亡灵盾卫', baseHp: 140, baseDmg: 12, speed: 0.92, color: '#344A59', accent: '#70D5D8', width: 31, height: 39, knockResist: 1.55, shield: 300, elite: true, spawnCap: 1, skill: 'shieldBash' },
             prism: { name: '幽魂女妖', baseHp: 58, baseDmg: 18, speed: 0.78, color: '#685087', accent: '#D8B4FE', width: 30, height: 36, knockResist: 1.15, laser: true, elite: true, spawnCap: 1, skill: 'soulLaser' },
+            tempest: { name: '雷鸣祭司', baseHp: 112, baseDmg: 18, speed: 0.82, color: '#294A68', accent: '#80D8FF', width: 31, height: 40, knockResist: 1.38, ranged: true, elite: true, spawnCap: 1, skill: 'stormCall', shootInterval: 188 },
             mimic: { name: '噬金币宝箱怪', baseHp: 105, baseDmg: 16, speed: 1.55, color: '#6F3B21', accent: '#FFD166', width: 36, height: 30, knockResist: 1.28, skill: 'mimicBite' }
         };
 
@@ -1504,15 +1638,45 @@
                 this.token = `projectile-${nextProjectileId++}`;
                 this.trail = [];
                 this.hitTargets = new Set();
+                this.age = 0;
+                this.homing = Boolean(options.homing) || this.model === 'missile';
+                this.homingTarget = options.homingTarget || null;
+                this.homingDelay = Math.max(0, options.homingDelay || 0);
+                this.homingSpeed = options.homingSpeed || 11;
+                this.turnRate = options.turnRate || 0.17;
+                this.acceleration = options.acceleration || 0.34;
+                this.launchAnchor = options.launchAnchor || null;
+                this.deployAngle = options.deployAngle || 0;
+                this.deployRadius = options.deployRadius || 30;
+                this.ignoreTerrainFrames = Math.max(0, options.ignoreTerrainFrames || 0);
+                this.collisionDelay = Math.max(0, options.collisionDelay || 0);
+                this.canHitChest = options.canHitChest !== false;
+                this.explosiveVisual = Boolean(options.explosiveVisual);
             }
 
             update() {
+                this.age++;
                 this.trail.push({ x: this.x, y: this.y });
-                if (this.trail.length > 5) this.trail.shift();
+                if (this.trail.length > (this.model === 'missile' ? 8 : 5)) this.trail.shift();
+
+                if (this.homing) this.updateMissileGuidance();
                 this.x += this.vx;
                 this.y += this.vy;
                 this.life--;
-                this.vy += this.gravity;
+                if (this.model !== 'missile') this.vy += this.gravity;
+                if (this.model === 'missile' && this.age % 3 === 0) {
+                    const speed = Math.max(1, Math.hypot(this.vx, this.vy));
+                    particles.push(new Particle(
+                        this.x - this.vx / speed * 7,
+                        this.y - this.vy / speed * 7,
+                        this.age <= this.homingDelay ? '#FFF59D' : '#FF7043',
+                        -this.vx * 0.05 + (Math.random() - 0.5) * 0.5,
+                        -this.vy * 0.05 + (Math.random() - 0.5) * 0.5,
+                        18,
+                        { size: 2.8, gravity: -0.01, drag: 0.95, shape: 'smoke', glow: 5, additive: this.age > this.homingDelay }
+                    ));
+                    enforceParticleBudget();
+                }
                 const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
                 if (this.x < 0) {
                     this.x += worldWidth;
@@ -1524,19 +1688,82 @@
                 return this.life > 0 && this.y > -240 && this.y < MAP_HEIGHT * CONFIG.TILE_SIZE + 200;
             }
 
+            isTargetAlive(target) {
+                if (!target) return false;
+                if (target === player) return player.hp > 0 && gameState === 'playing';
+                return target.alive !== false && target.hp > 0;
+            }
+
+            acquireHomingTarget() {
+                if (this.isTargetAlive(this.homingTarget)) return this.homingTarget;
+                if (this.owner === 'enemy') {
+                    this.homingTarget = player;
+                    return this.homingTarget;
+                }
+                const candidates = enemies.filter(enemy => enemy.alive);
+                if (activeBoss?.alive) candidates.push(activeBoss);
+                candidates.sort((a, b) => {
+                    const ax = Math.abs(getWrappedDeltaX(this.x, a.x + a.width / 2));
+                    const bx = Math.abs(getWrappedDeltaX(this.x, b.x + b.width / 2));
+                    return ax - bx;
+                });
+                this.homingTarget = candidates[0] || null;
+                return this.homingTarget;
+            }
+
+            updateMissileGuidance() {
+                if (this.age <= this.homingDelay) {
+                    const anchor = this.launchAnchor || player;
+                    const anchorX = anchor.x + anchor.width / 2;
+                    const anchorY = anchor.y + anchor.height * 0.35;
+                    const stagingX = anchorX + Math.cos(this.deployAngle) * this.deployRadius;
+                    const stagingY = anchorY + Math.sin(this.deployAngle) * this.deployRadius;
+                    this.vx = this.vx * 0.82 + getWrappedDeltaX(this.x, stagingX) * 0.11;
+                    this.vy = this.vy * 0.82 + (stagingY - this.y) * 0.11;
+                    return;
+                }
+
+                const target = this.acquireHomingTarget();
+                if (!target) return;
+                const targetX = target.x + target.width / 2;
+                const targetY = target.y + target.height / 2;
+                const desiredAngle = Math.atan2(targetY - this.y, getWrappedDeltaX(this.x, targetX));
+                const currentAngle = Math.atan2(this.vy, this.vx);
+                let angleDelta = desiredAngle - currentAngle;
+                while (angleDelta > Math.PI) angleDelta -= Math.PI * 2;
+                while (angleDelta < -Math.PI) angleDelta += Math.PI * 2;
+                const nextAngle = currentAngle + Math.max(-this.turnRate, Math.min(this.turnRate, angleDelta));
+                const speed = Math.min(this.homingSpeed, Math.max(4, Math.hypot(this.vx, this.vy) + this.acceleration));
+                this.vx = Math.cos(nextAngle) * speed;
+                this.vy = Math.sin(nextAngle) * speed;
+            }
+
+            ignoresTerrain() {
+                return this.age <= Math.max(this.homingDelay, this.ignoreTerrainFrames);
+            }
+
+            canCollide() {
+                return this.age > this.collisionDelay;
+            }
+
             draw(ctx) {
                 ctx.save();
+                if (this.model === 'missile') {
+                    this.drawMissile(ctx);
+                    ctx.restore();
+                    return;
+                }
                 this.trail.forEach((point, index) => {
                     ctx.globalAlpha = (index + 1) / (this.trail.length + 1) * 0.32;
                     ctx.fillStyle = this.color;
-                    ctx.fillRect(point.x - camera.x, point.y - camera.y, Math.max(1, this.size - 2), Math.max(1, this.size - 2));
+                    ctx.fillRect(getNearestWrappedScreenX(point.x), point.y - camera.y, Math.max(1, this.size - 2), Math.max(1, this.size - 2));
                 });
                 ctx.globalAlpha = 1;
                 ctx.fillStyle = this.color;
                 ctx.shadowColor = this.color;
                 ctx.shadowBlur = this.owner === 'player' ? 9 : 5;
                 if (this.model === 'bow' || this.model === 'crossbow') {
-                    ctx.translate(this.x - camera.x, this.y - camera.y);
+                    ctx.translate(getNearestWrappedScreenX(this.x), this.y - camera.y);
                     ctx.rotate(Math.atan2(this.vy, this.vx));
                     const boltLength = this.model === 'crossbow' ? 13 : 16;
                     ctx.fillRect(-boltLength / 2, -1, boltLength, 2);
@@ -1547,7 +1774,7 @@
                     ctx.closePath();
                     ctx.fill();
                 } else if (this.model === 'staff' || this.model === 'launcher') {
-                    ctx.translate(this.x - camera.x, this.y - camera.y);
+                    ctx.translate(getNearestWrappedScreenX(this.x), this.y - camera.y);
                     ctx.beginPath();
                     ctx.arc(0, 0, this.size, 0, Math.PI * 2);
                     ctx.fill();
@@ -1557,12 +1784,148 @@
                     ctx.arc(0, 0, this.size + 2, 0, Math.PI * 2);
                     ctx.stroke();
                 } else {
-                    ctx.translate(this.x - camera.x, this.y - camera.y);
+                    ctx.translate(getNearestWrappedScreenX(this.x), this.y - camera.y);
                     ctx.rotate(Math.atan2(this.vy, this.vx));
                     ctx.fillRect(-this.size, -this.size / 2, this.size * 2, this.size);
                 }
                 ctx.restore();
             }
+
+            drawMissile(ctx) {
+                const angle = Math.atan2(this.vy, this.vx);
+                this.trail.forEach((point, index) => {
+                    const alpha = (index + 1) / (this.trail.length + 1);
+                    ctx.globalAlpha = alpha * 0.42;
+                    ctx.fillStyle = index % 2 ? '#FF7043' : '#FFD54F';
+                    ctx.shadowColor = '#FF6D00';
+                    ctx.shadowBlur = reducedMotion ? 3 : 9;
+                    ctx.beginPath();
+                    ctx.arc(getNearestWrappedScreenX(point.x), point.y - camera.y, 1.5 + alpha * 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.globalAlpha = 1;
+                ctx.translate(getNearestWrappedScreenX(this.x), this.y - camera.y);
+                ctx.rotate(angle);
+                ctx.shadowColor = '#FFD54F';
+                ctx.shadowBlur = reducedMotion ? 5 : 13;
+                ctx.fillStyle = '#FF6D00';
+                ctx.beginPath();
+                ctx.moveTo(-7, 0); ctx.lineTo(-14, -4); ctx.lineTo(-12, 0); ctx.lineTo(-14, 4); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#ECEFF1';
+                ctx.strokeStyle = '#263238';
+                ctx.lineWidth = 1.5;
+                ctx.fillRect(-7, -3, 11, 6);
+                ctx.strokeRect(-7, -3, 11, 6);
+                ctx.fillStyle = '#EF5350';
+                ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(10, 0); ctx.lineTo(4, 3); ctx.closePath(); ctx.fill(); ctx.stroke();
+                ctx.fillStyle = '#90A4AE';
+                ctx.beginPath(); ctx.moveTo(-5, -3); ctx.lineTo(-9, -8); ctx.lineTo(0, -3); ctx.closePath(); ctx.fill(); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(-5, 3); ctx.lineTo(-9, 8); ctx.lineTo(0, 3); ctx.closePath(); ctx.fill(); ctx.stroke();
+                if (this.age <= this.homingDelay) {
+                    ctx.strokeStyle = '#FFF59D';
+                    ctx.globalAlpha = 0.72;
+                    ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.stroke();
+                }
+            }
+        }
+
+        // ============ 地面预警与区域技能 ============
+        const areaHazards = [];
+        let nextHazardId = 1;
+
+        class AreaHazard {
+            constructor(x, y, radius, damage, type = 'lightning', options = {}) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.damage = damage;
+                this.type = type;
+                this.delay = Math.max(1, options.delay || 45);
+                this.maxDelay = this.delay;
+                this.activeFrames = Math.max(1, options.activeFrames || 12);
+                this.maxActiveFrames = this.activeFrames;
+                this.triggered = false;
+                this.color = options.color || (type === 'meteor' ? '#FF7043' : type === 'void' ? '#B388FF' : '#80D8FF');
+                this.cause = options.cause || `${type}-hazard`;
+                this.token = `hazard-${nextHazardId++}`;
+            }
+
+            update() {
+                if (!this.triggered) {
+                    this.delay--;
+                    if (this.delay <= 0) this.trigger();
+                    return true;
+                }
+                this.activeFrames--;
+                return this.activeFrames > 0;
+            }
+
+            trigger() {
+                this.triggered = true;
+                const playerCenterX = player.x + player.width / 2;
+                const playerCenterY = player.y + player.height / 2;
+                const dx = getWrappedDeltaX(this.x, playerCenterX);
+                const dy = this.y - playerCenterY;
+                if (dx * dx + dy * dy <= this.radius * this.radius) player.takeDamage(this.damage, this.cause);
+                const count = this.type === 'meteor' ? 26 : 20;
+                spawnImpactParticles(this.x, this.y, this.color, count, this.type === 'meteor' ? 1.15 : 0.9);
+                spawnShockwave(this.x, this.y, this.color, this.radius * 1.15, 24, 6);
+                if (this.type === 'lightning') spawnEnergyBeam(this.x, this.y - 170, '#E1F5FE', Math.PI / 2, 180, 11);
+                screenShake = Math.max(screenShake, this.type === 'meteor' ? 8 : 6);
+                playSfx(this.type === 'meteor' ? 'shoot_shotgun' : 'laser_fire');
+            }
+
+            draw(ctx) {
+                const sx = getNearestWrappedScreenX(this.x);
+                const sy = this.y - camera.y;
+                ctx.save();
+                if (!this.triggered) {
+                    const progress = 1 - this.delay / this.maxDelay;
+                    const pulse = reducedMotion ? 0.75 : 0.55 + Math.sin(progress * Math.PI * 10) * 0.18;
+                    ctx.globalAlpha = pulse;
+                    ctx.strokeStyle = this.color;
+                    ctx.fillStyle = `${this.color}22`;
+                    ctx.shadowColor = this.color;
+                    ctx.shadowBlur = reducedMotion ? 3 : 10 + progress * 8;
+                    ctx.lineWidth = 2 + progress * 3;
+                    ctx.setLineDash([7, 5]);
+                    ctx.beginPath(); ctx.ellipse(sx, sy, this.radius, this.radius * 0.34, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.setLineDash([]);
+                    if (this.type === 'meteor') {
+                        const fall = progress * 150;
+                        ctx.fillStyle = '#FFAB91';
+                        ctx.beginPath(); ctx.arc(sx + 72 - fall * 0.48, sy - 150 + fall, 8 + progress * 5, 0, Math.PI * 2); ctx.fill();
+                    } else if (this.type === 'lightning') {
+                        ctx.globalAlpha *= 0.55;
+                        ctx.fillStyle = this.color;
+                        ctx.fillRect(sx - 1, sy - 190, 2, 190);
+                    } else if (this.type === 'void') {
+                        ctx.translate(sx, sy);
+                        ctx.rotate(progress * Math.PI);
+                        ctx.strokeRect(-this.radius * 0.45, -this.radius * 0.45, this.radius * 0.9, this.radius * 0.9);
+                    }
+                } else {
+                    const alpha = this.activeFrames / this.maxActiveFrames;
+                    ctx.globalCompositeOperation = reducedMotion ? 'source-over' : 'lighter';
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = this.color;
+                    ctx.shadowColor = this.color;
+                    ctx.shadowBlur = reducedMotion ? 4 : 20;
+                    if (this.type === 'lightning') {
+                        ctx.fillRect(sx - 6, sy - 210, 12, 210);
+                        ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx - 2, sy - 210, 4, 210);
+                    } else {
+                        ctx.beginPath(); ctx.arc(sx, sy, this.radius * (1.1 - alpha * 0.2), 0, Math.PI * 2); ctx.fill();
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
+        function spawnAreaHazard(x, y, radius, damage, type, options = {}) {
+            const hazard = new AreaHazard(wrapWorldX(x), y, radius, damage, type, options);
+            areaHazards.push(hazard);
+            return hazard;
         }
 
         // ============ 波次系统 ============
@@ -2396,6 +2759,20 @@
             return delta;
         }
 
+        function wrapWorldX(x) {
+            const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+            return ((x % worldWidth) + worldWidth) % worldWidth;
+        }
+
+        function getNearestWrappedScreenX(worldX, cameraX = camera.x) {
+            const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+            const viewportCenter = CONFIG.CANVAS_WIDTH / 2;
+            let screenX = worldX - cameraX;
+            if (screenX - viewportCenter > worldWidth / 2) screenX -= worldWidth;
+            else if (screenX - viewportCenter < -worldWidth / 2) screenX += worldWidth;
+            return screenX;
+        }
+
         function generateMap(biome = currentBiome) {
             currentBiome = biome;
             // 初始化空地图
@@ -2530,6 +2907,7 @@
                 this.attackDuration = CONFIG.ATTACK_DURATION;
                 this.attackCooldown = 0;
                 this.invincible = 0;
+                this.hurtTimer = 0;
                 this.walkFrame = 0;
                 this.walkTimer = 0;
                 this.slowRatio = 0;
@@ -2546,7 +2924,6 @@
                 this.passiveHitCount = 0;
                 this.passiveAttackCount = 0;
                 this.echoReady = false;
-                this.missileCooldown = 0;
                 this.pressureTimer = 0;
                 this.pressureSequence = 0;
                 this.lastStandActive = false;
@@ -2639,22 +3016,41 @@
                     this.takeDamage(Math.max(5, Math.round(this.maxHp * 0.08 * (1 - spring))), 'fall');
                 }
 
-                // 碰撞检测
+                // 碰撞检测；落地时加入脚下扬尘与冲击环。
+                const fallSpeedBeforeCollision = this.vy;
                 this.handleCollision();
+                if (!wasOnGround && this.onGround && fallSpeedBeforeCollision > 3.5) {
+                    const landingX = this.x + this.width / 2;
+                    const landingY = this.y + this.height;
+                    spawnImpactParticles(landingX, landingY, currentBiome.topAccent, Math.min(14, 6 + Math.round(fallSpeedBeforeCollision)), 0.55);
+                    spawnShockwave(landingX, landingY, currentBiome.topAccent, 28 + fallSpeedBeforeCollision * 1.4, 16, 3);
+                }
 
                 // 更新攻击状态
                 if (this.attackTimer > 0) this.attackTimer--;
-                if (this.attacking && !this.weapon.isRanged && this.weapon.hasParticles &&
+                if (this.attacking && !this.weapon.isRanged &&
                     !this.attackEffectTriggered && this.isAttackActive()) {
                     const pose = this.getWeaponPose();
                     const effectX = this.x + this.width / 2 + this.facing * (18 + pose.offsetX);
                     const effectY = this.y + this.height / 2 + pose.offsetY;
-                    spawnAttackParticles(effectX, effectY, this.weapon.particleColor, 12);
+                    spawnAttackParticles(effectX, effectY, this.weapon.particleColor, this.weapon.hasParticles ? 18 : 9);
+                    spawnSlashBurst(
+                        this.x + this.width / 2,
+                        this.y + this.height / 2,
+                        this.weapon.particleColor,
+                        this.facing === 1 ? pose.angle : Math.PI - pose.angle,
+                        this.getAttackReach(),
+                        this.weapon.attackStyle === 'spin' ? Math.PI * 1.8 : this.weapon.attackStyle === 'thrust' ? Math.PI * 0.24 : Math.PI * 0.95
+                    );
+                    if (['slam', 'spin', 'heavySlash'].includes(this.weapon.attackStyle)) {
+                        spawnShockwave(this.x + this.width / 2, this.y + this.height * 0.72, this.weapon.particleColor, this.getAttackReach() * 0.82, 20, 5);
+                    }
                     this.attackEffectTriggered = true;
                 }
                 if (this.attackTimer <= 0) this.attacking = false;
                 if (this.attackCooldown > 0) this.attackCooldown--;
                 if (this.invincible > 0) this.invincible--;
+                if (this.hurtTimer > 0) this.hurtTimer--;
                 if (this.reloadTimer > 0) {
                     this.reloadTimer--;
                     if (this.reloadTimer <= 0) {
@@ -2735,7 +3131,7 @@
                 multiplier *= 1 + (PASSIVE_BY_ID.hunter_ledger.questBonuses[hunterStage - 1] || 0);
                 const raidStage = this.getPassiveStage('raid_boss');
                 multiplier *= 1 + [0, 0.06, 0.12, 0.20][raidStage];
-                if (target?.elite || target instanceof BirchCorruptBoss) {
+                if (target?.elite || target?.isBoss) {
                     const eliteStage = this.getPassiveStage('elite_contract');
                     multiplier *= 1 + (PASSIVE_BY_ID.elite_contract.questBonuses[eliteStage - 1] || 0);
                 }
@@ -2786,7 +3182,7 @@
             getExecutionThreshold(target) {
                 const stage = this.getPassiveStage('arsenal_codex');
                 const threshold = PASSIVE_BY_ID.arsenal_codex.questBonuses[stage - 1] || 0;
-                return target instanceof BirchCorruptBoss ? threshold * 0.5 : threshold;
+                return target?.isBoss ? threshold * 0.5 : threshold;
             }
 
             advancePassiveQuest(id, amount) {
@@ -2843,7 +3239,6 @@
             }
 
             updatePassiveEffects() {
-                if (this.missileCooldown > 0) this.missileCooldown--;
                 if (this.rhythmTimer > 0) this.rhythmTimer--;
                 if (this.counterWindow > 0) this.counterWindow--;
                 if (this.counterCooldown > 0) this.counterCooldown--;
@@ -2988,12 +3383,26 @@
                     if (dx * dx + dy * dy > radius * radius) continue;
                     enemy.pressureStacks = Math.min(maxStacks, (enemy.pressureStacks || 0) + 1);
                     enemy.pressureStackTimer = 150;
-                    const base = this.getAttackDamage() * 0.04 + this.maxHp * 0.0025;
-                    const cap = enemy.maxHp * 0.03;
-                    enemy.takeDamage(Math.min(cap, base * enemy.pressureStacks), 0, 0, `pressure-${currentWave}-${this.pressureSequence}-${enemy.x}`, 0, {
+                    const damage = this.getAttackEventPower() * CONFIG.PRESSURE_ATTACK_COEFFICIENT * enemy.pressureStacks;
+                    enemy.takeDamage(damage, 0, 0, `pressure-${currentWave}-${this.pressureSequence}-${enemy.x}`, 0, {
                         source: 'pressureCooker', passiveDamage: true, canCrit: false, noTrigger: true
                     });
                 }
+                spawnShockwave(centerX, centerY, '#FF7043', radius, 20, 4);
+                for (let index = 0; index < 10 + stage * 3; index++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = radius * (0.25 + Math.random() * 0.75);
+                    particles.push(new Particle(
+                        centerX + Math.cos(angle) * distance,
+                        centerY + Math.sin(angle) * distance * 0.45,
+                        index % 3 === 0 ? '#FFF3E0' : '#FF7043',
+                        Math.cos(angle) * 0.4,
+                        -1.2 - Math.random() * 1.6,
+                        22 + Math.random() * 18,
+                        { shape: index % 3 === 0 ? 'smoke' : 'spark', size: 2 + Math.random() * 2.5, gravity: -0.015, glow: 7, additive: index % 3 !== 0 }
+                    ));
+                }
+                enforceParticleBudget();
             }
 
             getEffectiveDamageBonus(pelletCount = this.weapon?.pellets || 1) {
@@ -3004,6 +3413,14 @@
 
             getAttackDamage(pelletCount = this.weapon?.pellets || 1) {
                 return this.weapon.damage + this.getEffectiveDamageBonus(pelletCount);
+            }
+
+            getAttackEventPower() {
+                if (!this.weapon) return 0;
+                const pellets = this.weapon.isRanged ? Math.max(1, this.weapon.pellets || 1) : 1;
+                let power = this.getAttackDamage(pellets) * pellets;
+                if (this.hasPassive('dual_wield')) power *= 0.65;
+                return power;
             }
 
             getAttackKnockback() {
@@ -3109,6 +3526,31 @@
                         : 'shoot_gun';
                 playSfx(shotSound);
                 spawnImpactParticles(muzzleX, muzzleY, weapon.particleColor, ['shotgun', 'launcher'].includes(weapon.model) ? 12 : 6, 0.55);
+                spawnShockwave(muzzleX, muzzleY, weapon.particleColor, ['shotgun', 'launcher'].includes(weapon.model) ? 34 : 20, 12, 3);
+                if (['railgun', 'sniper'].includes(weapon.visualVariant)) {
+                    spawnEnergyBeam(muzzleX, muzzleY, weapon.particleColor, this.facing === 1 ? 0 : Math.PI, 170, weapon.visualVariant === 'sniper' ? 7 : 5);
+                }
+                if (!['bow', 'crossbow', 'staff'].includes(weapon.model)) {
+                    particles.push(new Particle(
+                        gripX - this.facing * 2,
+                        muzzleY - 2,
+                        '#FFD180',
+                        -this.facing * (1.2 + Math.random()),
+                        -2.2 - Math.random(),
+                        28,
+                        { size: 2.2, gravity: 0.16, drag: 0.97, shape: 'diamond', spin: 0.28 }
+                    ));
+                    particles.push(new Particle(
+                        muzzleX,
+                        muzzleY,
+                        '#ECEFF1',
+                        this.facing * 0.45,
+                        -0.55,
+                        24,
+                        { size: 4.2, gravity: -0.015, drag: 0.94, shape: 'smoke', shrink: -0.25 }
+                    ));
+                    enforceParticleBudget();
+                }
                 screenShake = Math.max(screenShake, weapon.model === 'launcher' ? 8 : weapon.model === 'shotgun' ? 6 : 2.5);
                 this.triggerAttackPassives();
                 if (this.ammo <= 0) this.startReload();
@@ -3125,28 +3567,36 @@
                 }
                 if (this.hasPassive('echo_strike') && this.passiveAttackCount % 4 === 0) this.echoReady = true;
                 const missileCount = Math.round(getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage')));
-                if (missileCount <= 0 || this.missileCooldown > 0) return;
-                const targets = enemies
-                    .filter(enemy => enemy.alive)
-                    .sort((a, b) => Math.abs(getWrappedDeltaX(this.x, a.x)) - Math.abs(getWrappedDeltaX(this.x, b.x)));
-                const target = targets[0] || (activeBoss?.alive ? activeBoss : null);
-                if (!target) return;
-                this.missileCooldown = 72;
+                if (missileCount > 0) this.launchMissileBarrage(missileCount);
+            }
+
+            launchMissileBarrage(missileCount) {
                 const originX = this.x + this.width / 2;
                 const originY = this.y + 10;
-                const targetX = target.x + target.width / 2;
-                const targetY = target.y + target.height / 2;
-                const baseAngle = Math.atan2(targetY - originY, getWrappedDeltaX(originX, targetX));
+                const targets = enemies
+                    .filter(enemy => enemy.alive)
+                    .sort((a, b) => Math.abs(getWrappedDeltaX(originX, a.x + a.width / 2)) - Math.abs(getWrappedDeltaX(originX, b.x + b.width / 2)));
+                if (activeBoss?.alive) targets.push(activeBoss);
+                const missileDamage = this.getAttackEventPower() * CONFIG.MISSILE_ATTACK_COEFFICIENT;
+                runStats.projectilesFired += missileCount;
+                if (gameMode === 'endless') runStats.endlessProjectilesFired += missileCount;
                 for (let index = 0; index < missileCount; index++) {
-                    const spread = (index - (missileCount - 1) / 2) * 0.09;
-                    const angle = baseAngle + spread;
-                    projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 9, Math.sin(angle) * 9,
-                        this.getAttackDamage() * 0.18, '#FFD54F', 'player', {
-                            size: 4, life: 150, model: 'staff', knockback: 0, knockbackFrames: 0,
-                            damageSource: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
+                    const spreadPosition = missileCount === 1 ? 0.5 : index / (missileCount - 1);
+                    const deployAngle = -Math.PI * 0.86 + spreadPosition * Math.PI * 0.72;
+                    const deployFrames = 10 + index * 2;
+                    projectiles.push(new Projectile(originX, originY, Math.cos(deployAngle) * 3.8, Math.sin(deployAngle) * 3.8,
+                        missileDamage, '#FFD54F', 'player', {
+                            size: 5, life: 180, model: 'missile', knockback: 0, knockbackFrames: 0,
+                            damageSource: 'missile', passiveDamage: true, canCrit: false, noTrigger: true,
+                            homingTarget: targets[index % Math.max(1, targets.length)] || null,
+                            homingDelay: deployFrames, ignoreTerrainFrames: 180,
+                            collisionDelay: deployFrames, homingSpeed: 12.5, turnRate: 0.18,
+                            acceleration: 0.42, launchAnchor: this, deployAngle,
+                            deployRadius: 32 + index * 3, canHitChest: false, explosiveVisual: true
                         }));
                 }
-                spawnAttackParticles(originX, originY, '#FFD54F', 5 + missileCount);
+                spawnAttackParticles(originX, originY, '#FFD54F', 7 + missileCount * 2);
+                spawnShockwave(originX, originY, '#FFD54F', 26 + missileCount * 3, 16, 3);
             }
 
             onDamageDealt(actualDamage, target, options = {}) {
@@ -3160,8 +3610,8 @@
                 if (distance >= 220) this.advancePassiveQuest('longshot_calibration', 1);
                 const frost = getPassiveValue('frost_brand', this.getPassiveLevel('frost_brand'));
                 if (target && frost > 0) {
-                    target.slowRatio = Math.max(target.slowRatio || 0, target instanceof BirchCorruptBoss ? frost * 0.5 : frost);
-                    target.slowTimer = Math.max(target.slowTimer || 0, target instanceof BirchCorruptBoss ? 45 : 90);
+                    target.slowRatio = Math.max(target.slowRatio || 0, target?.isBoss ? frost * 0.5 : frost);
+                    target.slowTimer = Math.max(target.slowTimer || 0, target?.isBoss ? 45 : 90);
                 }
                 if (target && !target.alive && !this.arsenalModels.has(this.weapon.model)) {
                     this.arsenalModels.add(this.weapon.model);
@@ -3205,10 +3655,10 @@
 
             onKill(target, options = {}) {
                 this.advancePassiveQuest('hunter_ledger', 1);
-                if (target?.elite && !(target instanceof BirchCorruptBoss)) {
+                if (target?.elite && !target?.isBoss) {
                     this.advancePassiveQuest('elite_contract', 1);
                 }
-                if (target instanceof BirchCorruptBoss) {
+                if (target?.isBoss) {
                     this.advancePassiveQuest('raid_boss', 1);
                 }
                 const harvestLevel = this.getPassiveLevel('harvest_burst');
@@ -3298,18 +3748,20 @@
                 }
                 const p = Math.max(0, Math.min(1, progress));
                 const ease = p * p * (3 - 2 * p);
+                const combo = this.attackSequence % 3;
                 let angle = -0.9;
                 let offsetX = 0;
                 let offsetY = 0;
                 switch (this.weapon.attackStyle) {
                     case 'thrust': {
                         const thrust = p < 0.48 ? p / 0.48 : Math.max(0, (1 - p) / 0.52);
-                        angle = -0.08;
+                        angle = combo === 1 ? 0.12 : combo === 2 ? -0.28 : -0.08;
                         offsetX = thrust * 18;
+                        offsetY = combo === 1 ? 4 : combo === 2 ? -5 : 0;
                         break;
                     }
                     case 'chop':
-                        angle = -1.72 + ease * 2.92;
+                        angle = (combo === 1 ? -1.2 : -1.72) + ease * (combo === 1 ? 2.35 : 2.92);
                         offsetY = -4 + ease * 5;
                         break;
                     case 'slam':
@@ -3332,7 +3784,15 @@
                         offsetX = ease * 5;
                         break;
                     default:
-                        angle = -1.14 + ease * 2.28;
+                        if (combo === 1) {
+                            angle = 1.06 - ease * 2.22;
+                            offsetY = 3 - ease * 5;
+                        } else if (combo === 2) {
+                            angle = -1.62 + ease * 2.95;
+                            offsetX = -3 + ease * 7;
+                        } else {
+                            angle = -1.14 + ease * 2.28;
+                        }
                         break;
                 }
                 const layer = this.weapon.attackStyle === 'spin' && Math.sin(angle) < 0 ? 'back' : 'front';
@@ -3427,7 +3887,6 @@
                 this.passiveHitCount = 0;
                 this.passiveAttackCount = 0;
                 this.echoReady = false;
-                this.missileCooldown = 0;
                 this.pressureTimer = 0;
                 this.pressureSequence = 0;
                 this.lastStandActive = false;
@@ -3476,6 +3935,7 @@
                     this.triggerColossusPulse();
                 }
                 this.invincible = 60;
+                this.hurtTimer = 18;
                 screenShake = Math.max(screenShake, 8);
                 damageFlash = Math.max(damageFlash, 10);
                 spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, '#FF5252', 12, 0.85);
@@ -3651,10 +4111,22 @@
             drawHeroBody(ctx, x, y, weaponPose) {
                 const step = this.walkFrame % 2;
                 const attacking = this.attacking && !this.weapon.isRanged;
+                const attackProgress = this.getAttackProgress();
+                const airborne = !this.onGround;
+                const runBob = this.onGround && Math.abs(this.vx) > 0 ? Math.sin(this.walkFrame * Math.PI / 2) * 1.2 : 0;
+                const recoilLean = this.weapon.isRanged && this.attacking ? -0.08 : 0;
+                const attackLean = attacking ? (attackProgress < 0.35 ? -0.09 : 0.12) : 0;
+                const hurtLean = this.hurtTimer > 0 ? -0.18 : 0;
+                const airLean = airborne ? Math.max(-0.1, Math.min(0.1, this.vy * 0.012)) : 0;
+                const squash = this.hurtTimer > 0 ? 0.06 : airborne ? -0.035 : 0;
                 const outline = '#10131B';
                 const skin = '#D9A27A';
                 const skinLight = '#F2C39F';
                 ctx.save();
+                ctx.translate(x + this.width / 2, y + this.height);
+                ctx.rotate((recoilLean + attackLean + hurtLean + airLean) * this.facing);
+                ctx.scale(1 + squash, 1 - squash);
+                ctx.translate(-(x + this.width / 2), -(y + this.height) + runBob + (airborne ? -1.5 : 0));
                 ctx.lineWidth = 2;
                 ctx.strokeStyle = outline;
                 ctx.lineJoin = 'miter';
@@ -3875,7 +4347,7 @@
 
             draw(ctx) {
                 if (!this.alive) return;
-                const x = this.x - camera.x;
+                const x = getNearestWrappedScreenX(this.x + this.width / 2) - this.width / 2;
                 const y = this.y - camera.y;
                 ctx.save();
                 ctx.globalAlpha = 0.26;
@@ -3976,10 +4448,10 @@
                 this.vy = 0;
                 this.onGround = false;
                 const scaling = getEnemyScalingForWave(wave);
-                this.hp = Math.max(1, Math.floor(t.baseHp * scaling.hp));
+                this.hp = Math.max(1, Math.floor(t.baseHp * scaling.hp * CONFIG.ENEMY_GLOBAL_HP_MULTIPLIER));
                 this.maxHp = this.hp;
-                this.damage = Math.max(1, Math.floor(t.baseDmg * scaling.damage));
-                this.speed = t.speed;
+                this.damage = Math.max(1, Math.floor(t.baseDmg * scaling.damage * CONFIG.ENEMY_GLOBAL_DAMAGE_MULTIPLIER));
+                this.speed = t.speed * CONFIG.ENEMY_GLOBAL_SPEED_MULTIPLIER;
                 this.color = t.color;
                 this.accent = t.accent || '#DCE775';
                 this.skill = t.skill || 'claw';
@@ -3994,7 +4466,7 @@
                 this.walkFrame = 0;
                 this.walkTimer = 0;
                 this.lastHitToken = null;
-                this.shootInterval = t.shootInterval || 120;
+                this.shootInterval = Math.max(36, Math.round((t.shootInterval || 120) * 0.92));
                 this.shootCooldown = Math.min(90, this.shootInterval);
                 this.knockbackVx = 0;
                 this.knockbackTimer = 0;
@@ -4018,6 +4490,9 @@
                 this.skillTimer = 0;
                 this.skillTriggered = false;
                 this.attackAnimTimer = 0;
+                this.attackAnimMax = 1;
+                this.castTargetX = 0;
+                this.castTargetY = 0;
                 this.contactCooldown = 0;
                 this.abilityVx = 0;
                 this.abilityVxFrames = 0;
@@ -4098,12 +4573,21 @@
                     this.abilityVxFrames = 18;
                     this.skillCooldown = 145;
                     this.attackAnimTimer = 24;
+                    this.attackAnimMax = 24;
+                } else if (this.aggro && this.skill === 'hornCharge' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) >= 90 && Math.abs(dx) <= 360) {
+                    this.facing = Math.sign(dx) || this.facing;
+                    this.skillTimer = 36;
+                    this.skillTriggered = false;
+                    this.skillCooldown = 168;
+                    this.attackAnimTimer = 36;
+                    this.attackAnimMax = 36;
                 } else if (this.aggro && this.skill === 'shieldBash' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 190) {
                     this.facing = Math.sign(dx) || this.facing;
                     this.abilityVx = this.facing * this.speed * 3.1;
                     this.abilityVxFrames = 20;
                     this.skillCooldown = 175;
                     this.attackAnimTimer = 28;
+                    this.attackAnimMax = 28;
                 } else if (this.aggro && this.skill === 'mimicBite' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 230) {
                     this.facing = Math.sign(dx) || this.facing;
                     this.vy = -5.5;
@@ -4111,21 +4595,30 @@
                     this.abilityVxFrames = 22;
                     this.skillCooldown = 125;
                     this.attackAnimTimer = 30;
+                    this.attackAnimMax = 30;
                 } else if (this.aggro && this.skill === 'slam' && this.onGround && this.skillCooldown <= 0 && Math.abs(dx) <= 125) {
                     this.skillTimer = 34;
                     this.skillTriggered = false;
                     this.skillCooldown = 205;
                     this.attackAnimTimer = 34;
+                    this.attackAnimMax = 34;
                 }
 
                 if (this.skillTimer > 0) {
                     this.skillTimer--;
                     desiredVx = 0;
-                    if (!this.skillTriggered && this.skillTimer <= 14) {
+                    if (!this.skillTriggered && this.skillTimer <= 14 && this.skill === 'hornCharge') {
+                        this.skillTriggered = true;
+                        this.abilityVx = this.facing * this.speed * 4.2;
+                        this.abilityVxFrames = 25;
+                        spawnShockwave(this.x + this.width / 2, this.y + this.height, '#E0B46B', 46, 18, 5);
+                        spawnAttackParticles(this.x + this.width / 2, this.y + this.height, '#E0B46B', 14);
+                        screenShake = Math.max(screenShake, 4);
+                    } else if (!this.skillTriggered && this.skillTimer <= 14) {
                         this.skillTriggered = true;
                         screenShake = Math.max(screenShake, 7);
                         spawnImpactParticles(this.x + this.width / 2, this.y + this.height, '#C0CA33', 18, 0.9);
-                        const closeX = Math.abs((player.x + player.width / 2) - (this.x + this.width / 2)) <= 125;
+                        const closeX = Math.abs(getWrappedDeltaX(this.x + this.width / 2, player.x + player.width / 2)) <= 125;
                         const closeY = Math.abs((player.y + player.height) - (this.y + this.height)) <= 70;
                         if (closeX && closeY) player.takeDamage(Math.round(this.damage * 1.3), 'orc-slam');
                     }
@@ -4144,6 +4637,7 @@
                         this.leapBoostFrames = 22;
                         this.leapCooldown = 100 + Math.floor(Math.random() * 55);
                         this.attackAnimTimer = 28;
+                        this.attackAnimMax = 28;
                     }
                 }
 
@@ -4166,10 +4660,41 @@
                         const projSpeed = 3 + Math.random();
                         const dir = Math.sign(dx) || 1;
                         this.facing = dir;
-                        this.attackAnimTimer = 22;
-                        projectiles.push(new Projectile(this.x + this.width / 2, this.y + this.height * 0.45, dir * projSpeed, -0.45, this.damage, this.accent, 'enemy', {
-                            model: 'bow', size: 3, gravity: 0.035
-                        }));
+                        this.attackAnimTimer = this.skill === 'stormCall' ? 34 : 22;
+                        this.attackAnimMax = this.attackAnimTimer;
+                        const originX = this.x + this.width / 2;
+                        const originY = this.y + this.height * 0.45;
+                        if (this.skill === 'toxicBomb') {
+                            for (let shot = 0; shot < 2; shot++) {
+                                projectiles.push(new Projectile(originX, originY, dir * (2.7 + shot * 0.35), -3.7 - shot * 0.3,
+                                    Math.round(this.damage * 0.72), '#C6FF55', 'enemy', {
+                                        model: 'launcher', size: 6, gravity: 0.12, explosiveVisual: true
+                                    }));
+                            }
+                            spawnShockwave(originX, originY, '#C6FF55', 24, 14, 3);
+                        } else if (this.skill === 'shadowVolley') {
+                            for (let shot = -1; shot <= 1; shot++) {
+                                const angle = Math.atan2(dy, dx || dir) + shot * 0.18;
+                                projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 3.6, Math.sin(angle) * 3.6,
+                                    Math.round(this.damage * 0.62), '#B388FF', 'enemy', {
+                                        model: 'staff', size: 5, gravity: 0
+                                    }));
+                            }
+                            spawnAttackParticles(originX, originY, '#B388FF', 10);
+                        } else if (this.skill === 'stormCall') {
+                            [-70, 0, 70].forEach((offset, index) => {
+                                const targetX = wrapWorldX(player.x + player.width / 2 + offset);
+                                const targetGround = findGroundYAt(targetX, 0);
+                                spawnAreaHazard(targetX, targetGround, 34,
+                                    Math.round(this.damage * 0.82), 'lightning', {
+                                        delay: 38 + index * 8, activeFrames: 10, color: '#80D8FF', cause: 'storm-call'
+                                    });
+                            });
+                        } else {
+                            projectiles.push(new Projectile(originX, originY, dir * projSpeed, -0.45, this.damage, this.accent, 'enemy', {
+                                model: 'bow', size: 3, gravity: 0.035
+                            }));
+                        }
                     }
                 }
 
@@ -4181,8 +4706,15 @@
                 this.x += this.vx;
                 this.y += this.vy;
 
-                // 碰撞检测
+                // 碰撞检测；落地时生成一次尘环，表现跳跃、坠落与重装落地动作。
+                const fallSpeedBeforeCollision = this.vy;
                 this.handleCollision();
+                if (!wasOnGround && this.onGround && fallSpeedBeforeCollision > 3.5) {
+                    const landingX = this.x + this.width / 2;
+                    const landingY = this.y + this.height;
+                    spawnImpactParticles(landingX, landingY, currentBiome.topAccent, Math.min(14, 6 + Math.round(fallSpeedBeforeCollision)), 0.55);
+                    spawnShockwave(landingX, landingY, currentBiome.topAccent, 28 + fallSpeedBeforeCollision * 1.4, 16, 3);
+                }
 
                 // 敌人与玩家共用环形地图，可从任意一侧跨到另一侧继续追击。
                 const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
@@ -4220,6 +4752,7 @@
                     this.aggro = true;
                     this.contactCooldown = this.skill === 'mimicBite' ? 42 : 54;
                     this.attackAnimTimer = Math.max(this.attackAnimTimer, 20);
+                    this.attackAnimMax = Math.max(this.attackAnimMax, this.attackAnimTimer);
                     const multiplier = this.skill === 'mimicBite' ? 1.3
                         : this.skill === 'shieldBash' ? 1.2
                             : this.leaper ? 1.15
@@ -4382,7 +4915,7 @@
             draw(ctx) {
                 if (!this.alive) return;
 
-                const screenX = this.x - camera.x;
+                const screenX = getNearestWrappedScreenX(this.x + this.width / 2) - this.width / 2;
                 const screenY = this.y - camera.y;
 
                 ctx.save();
@@ -4447,6 +4980,8 @@
 
             drawDetailedEnemyBody(ctx, x, y) {
                 const attacking = this.attackAnimTimer > 0;
+                const actionProgress = attacking ? 1 - this.attackAnimTimer / Math.max(1, this.attackAnimMax) : 0;
+                const actionPulse = Math.sin(actionProgress * Math.PI);
                 const step = this.walkFrame % 2;
                 const bob = this.onGround && Math.abs(this.vx) > 0 ? step : 0;
                 const outline = '#15131A';
@@ -4459,7 +4994,7 @@
                 ctx.lineJoin = 'miter';
 
                 if (this.type === 'zombie') {
-                    const clawReach = attacking ? 8 : 1;
+                    const clawReach = attacking ? 2 + actionPulse * 10 : 1;
                     ctx.fillStyle = '#2A2430';
                     ctx.fillRect(x + 6, y + 20, 6, 13 + step);
                     ctx.fillRect(x + 17, y + 20, 6, 13 - step);
@@ -4481,7 +5016,7 @@
                     ctx.fillRect(x + 25 + clawReach, y + 15, 2, 2);
                     ctx.fillRect(x + 25 + clawReach, y + 19, 3, 2);
                 } else if (this.type === 'runner') {
-                    const thrust = attacking ? 10 : 2;
+                    const thrust = attacking ? 2 + actionPulse * 14 : 2;
                     ctx.fillStyle = '#31283A';
                     ctx.fillRect(x + 6 - step, y + 20, 5, 9);
                     ctx.fillRect(x + 15 + step, y + 20, 5, 9);
@@ -4520,7 +5055,7 @@
                     ctx.fillStyle = '#30343B'; ctx.fillRect(22, -9, 13, 18); ctx.strokeRect(22, -9, 13, 18);
                     ctx.restore();
                 } else if (this.type === 'shooter') {
-                    const draw = attacking ? 7 : 0;
+                    const draw = attacking ? actionPulse * 9 : 0;
                     ctx.fillStyle = '#493C4F';
                     ctx.fillRect(x + 7, y + 20, 5, 12 + step);
                     ctx.fillRect(x + 16, y + 20, 5, 12 - step);
@@ -4534,7 +5069,7 @@
                     ctx.beginPath(); ctx.moveTo(x + 28, y + 4); ctx.lineTo(x + 18 - draw, y + 16); ctx.lineTo(x + 28, y + 28); ctx.stroke();
                     ctx.fillStyle = accent; ctx.fillRect(x + 17 - draw, y + 15, 22 + draw, 2);
                 } else if (this.type === 'leaper') {
-                    const lunge = attacking ? 5 : 0;
+                    const lunge = attacking ? actionPulse * 8 : 0;
                     ctx.fillStyle = skin;
                     ctx.beginPath(); ctx.ellipse(x + 15, y + 12, 11 + lunge * 0.4, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
                     ctx.beginPath(); ctx.arc(x + 24 + lunge, y + 12, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -4547,8 +5082,61 @@
                     ctx.fillStyle = '#FF5252'; ctx.fillRect(x + 23 + lunge, y + 9, 3, 3); ctx.fillRect(x + 27 + lunge, y + 9, 3, 3);
                     ctx.fillStyle = '#F5F5F5';
                     ctx.beginPath(); ctx.moveTo(x + 26 + lunge, y + 15); ctx.lineTo(x + 28 + lunge, y + 22); ctx.lineTo(x + 30 + lunge, y + 15); ctx.fill();
+                } else if (this.type === 'charger') {
+                    const lowered = attacking ? 3 + actionPulse * 5 : 0;
+                    ctx.fillStyle = '#33231D';
+                    ctx.fillRect(x + 5 - step, y + 22, 7, 9); ctx.fillRect(x + 25 + step, y + 22, 7, 9);
+                    ctx.fillStyle = skin;
+                    ctx.beginPath(); ctx.ellipse(x + 18, y + 17 + lowered * 0.25, 17, 11, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#4A2C23'; ctx.fillRect(x + 4, y + 10, 19, 13); ctx.strokeRect(x + 4, y + 10, 19, 13);
+                    ctx.fillStyle = accent;
+                    ctx.beginPath(); ctx.moveTo(x + 2, y + 10 + lowered); ctx.lineTo(x - 10 - actionPulse * 8, y + 2 + lowered); ctx.lineTo(x, y + 16 + lowered); ctx.fill(); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(x + 7, y + 9 + lowered); ctx.lineTo(x + 1, y - 3 + lowered); ctx.lineTo(x + 13, y + 7 + lowered); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#FF7043'; ctx.fillRect(x + 7, y + 13 + lowered, 4, 3);
+                    if (this.skillTimer > 14) {
+                        ctx.strokeStyle = '#FFD180'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+                        ctx.beginPath(); ctx.moveTo(x - 12, y + this.height); ctx.lineTo(x + 48, y + this.height); ctx.stroke(); ctx.setLineDash([]);
+                    }
+                } else if (this.type === 'bombardier') {
+                    const throwLift = attacking ? actionPulse * 10 : 0;
+                    ctx.fillStyle = '#26331F'; ctx.fillRect(x + 7 - step, y + 25, 5, 9); ctx.fillRect(x + 17 + step, y + 25, 5, 9);
+                    ctx.fillStyle = '#3A4A2E'; ctx.fillRect(x + 5, y + 13, 19, 15); ctx.strokeRect(x + 5, y + 13, 19, 15);
+                    ctx.fillStyle = skin; ctx.fillRect(x + 7, y + 3, 16, 13); ctx.strokeRect(x + 7, y + 3, 16, 13);
+                    ctx.fillStyle = '#1F2A1A'; ctx.fillRect(x + 4, y, 21, 6);
+                    ctx.fillStyle = '#FFEB3B'; ctx.fillRect(x + 17, y + 8, 3, 3);
+                    ctx.fillStyle = '#6B7D3D'; ctx.beginPath(); ctx.arc(x + 3, y + 18, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(x + 25, y + 18 - throwLift, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#263238'; ctx.fillRect(x + 24, y + 8 - throwLift, 3, 5);
+                    if (attacking) {
+                        ctx.globalAlpha = 0.55; ctx.strokeStyle = accent; ctx.beginPath();
+                        ctx.arc(x + 25, y + 18 - throwLift, 10 + actionPulse * 5, 0, Math.PI * 2); ctx.stroke();
+                    }
+                } else if (this.type === 'warlock') {
+                    const castLift = attacking ? actionPulse * 8 : 0;
+                    ctx.fillStyle = '#21192E';
+                    ctx.beginPath(); ctx.moveTo(x + 4, y + 13); ctx.lineTo(x + 25, y + 13); ctx.lineTo(x + 28, y + 37); ctx.lineTo(x + 1, y + 37); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = skin; ctx.fillRect(x + 8, y + 4, 14, 13); ctx.strokeRect(x + 8, y + 4, 14, 13);
+                    ctx.fillStyle = '#171020'; ctx.beginPath(); ctx.moveTo(x + 5, y + 7); ctx.lineTo(x + 15, y - 5); ctx.lineTo(x + 25, y + 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = accent; ctx.fillRect(x + 16, y + 9, 3, 3);
+                    ctx.strokeStyle = '#7E57C2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 3, y + 31); ctx.lineTo(x + 28, y + 2 - castLift); ctx.stroke();
+                    ctx.fillStyle = accent; ctx.shadowColor = accent; ctx.shadowBlur = 12;
+                    ctx.beginPath(); ctx.arc(x + 28, y - 1 - castLift, 5 + actionPulse * 3, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+                } else if (this.type === 'tempest') {
+                    const castLift = attacking ? actionPulse * 11 : 0;
+                    ctx.fillStyle = '#172A3D';
+                    ctx.beginPath(); ctx.moveTo(x + 5, y + 14); ctx.lineTo(x + 26, y + 14); ctx.lineTo(x + 30, y + 40); ctx.lineTo(x + 1, y + 40); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = '#263E56'; ctx.fillRect(x + 8, y + 17, 16, 17); ctx.strokeRect(x + 8, y + 17, 16, 17);
+                    ctx.fillStyle = skin; ctx.fillRect(x + 8, y + 4, 16, 13); ctx.strokeRect(x + 8, y + 4, 16, 13);
+                    ctx.fillStyle = '#102234'; ctx.beginPath(); ctx.moveTo(x + 4, y + 8); ctx.lineTo(x + 16, y - 6); ctx.lineTo(x + 28, y + 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+                    ctx.fillStyle = accent; ctx.fillRect(x + 17, y + 9, 4, 3);
+                    ctx.strokeStyle = '#90CAF9'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x + 3, y + 35); ctx.lineTo(x + 4, y + 4 - castLift); ctx.stroke();
+                    ctx.strokeStyle = accent; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(x + 2, y + 5 - castLift); ctx.lineTo(x - 4, y - 2 - castLift); ctx.lineTo(x + 3, y - 4 - castLift); ctx.lineTo(x - 1, y - 12 - castLift); ctx.stroke();
+                    if (attacking) {
+                        ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(x + 16, y + 18, 18 + actionPulse * 8, 0, Math.PI * 2); ctx.stroke();
+                    }
                 } else if (this.type === 'warden') {
-                    const bash = this.abilityVxFrames > 0 || attacking;
+                    const bash = this.abilityVxFrames > 0 || (attacking && actionProgress > 0.42);
                     ctx.fillStyle = '#202936'; ctx.fillRect(x + 8, y + 28, 7, 11 + step); ctx.fillRect(x + 20, y + 28, 7, 11 - step);
                     ctx.fillStyle = skin; ctx.fillRect(x + 6, y + 11, 23, 21); ctx.strokeRect(x + 6, y + 11, 23, 21);
                     ctx.fillStyle = '#18202B'; ctx.fillRect(x + 7, y + 2, 21, 13); ctx.strokeRect(x + 7, y + 2, 21, 13);
@@ -4571,7 +5159,7 @@
                     ctx.beginPath(); ctx.arc(x + 16, y + 20, pulse ? 6 : 4, 0, Math.PI * 2); ctx.fill();
                     ctx.shadowBlur = 0;
                 } else if (this.type === 'mimic') {
-                    const open = attacking || this.abilityVxFrames > 0;
+                    const open = (attacking && actionPulse > 0.35) || this.abilityVxFrames > 0;
                     ctx.fillStyle = '#2A1B18'; ctx.fillRect(x + 3, y + 17, 31, 13); ctx.strokeRect(x + 3, y + 17, 31, 13);
                     ctx.fillStyle = skin;
                     ctx.save(); ctx.translate(x + 3, y + 17); ctx.rotate(open ? -0.42 : -0.06);
@@ -4669,10 +5257,41 @@
             }
         }
 
-        // ============ Boss: 白桦腐竹 ============
+        const BOSS_ARCHETYPES = {
+            corrupt: {
+                name: '白桦腐竹', title: '腐化根源', hpMultiplier: 1, damageMultiplier: 1, moveSpeed: 1.1,
+                aura: '#8BC34A', accent: '#C5E1A5', armor: '#F5F5F5', core: '#A5D6A7', projectile: '#8BC34A',
+                primaryCooldown: 152, slamCooldown: 225, novaCooldown: 215, specialCooldown: 255
+            },
+            inferno: {
+                name: '熔核巨像', title: '焚界炉心', hpMultiplier: 1.12, damageMultiplier: 1.06, moveSpeed: 0.92,
+                aura: '#FF5722', accent: '#FFD180', armor: '#5D4037', core: '#FFAB40', projectile: '#FF7043',
+                primaryCooldown: 132, slamCooldown: 188, novaCooldown: 192, specialCooldown: 238
+            },
+            void: {
+                name: '虚空巫王', title: '裂界君主', hpMultiplier: 0.94, damageMultiplier: 1.1, moveSpeed: 1.28,
+                aura: '#7C4DFF', accent: '#E1BEE7', armor: '#302544', core: '#B388FF', projectile: '#CE93D8',
+                primaryCooldown: 118, slamCooldown: 192, novaCooldown: 204, specialCooldown: 218
+            }
+        };
+
+        function getBossArchetypeKeyForWave(wave, mode = gameMode) {
+            if (mode !== 'endless' || wave <= CONFIG.BOSS_WAVE) return 'corrupt';
+            const cycle = ['inferno', 'void', 'corrupt'];
+            return cycle[Math.max(0, Math.floor((wave - 20) / 10)) % cycle.length];
+        }
+
+        function createBossForWave(wave, mode = gameMode) {
+            return new BirchCorruptBoss(wave, getBossArchetypeKeyForWave(wave, mode));
+        }
+
+        // ============ 多形态 Boss ============
         class BirchCorruptBoss {
-            constructor(wave) {
-                this.name = '白桦腐竹';
+            constructor(wave, archetypeKey = getBossArchetypeKeyForWave(wave)) {
+                this.variant = BOSS_ARCHETYPES[archetypeKey] ? archetypeKey : 'corrupt';
+                this.archetype = BOSS_ARCHETYPES[this.variant];
+                this.name = this.archetype.name;
+                this.title = this.archetype.title;
                 this.isBoss = true;
                 this.x = 600;
                 this.y = 100;
@@ -4685,25 +5304,28 @@
                 const endlessTier = Math.max(0, wave - CONFIG.BOSS_WAVE);
                 const storyBossMultiplier = Math.pow(1.2, Math.min(9, Math.max(0, wave - 1)));
                 const hpMultiplier = storyBossMultiplier * (1 + Math.pow(endlessTier, 0.78) * 0.055);
-                this.maxHp = Math.floor(800 * hpMultiplier);
+                this.maxHp = Math.floor(800 * hpMultiplier * this.archetype.hpMultiplier);
                 this.hp = this.maxHp;
-                this.damage = Math.floor(22 * (1 + Math.pow(endlessTier, 0.72) * 0.07));
+                this.damage = Math.floor(26 * (1 + Math.pow(endlessTier, 0.72) * 0.055) * this.archetype.damageMultiplier);
                 this.knockResist = 2.5;
                 this.hitTimer = 0;
                 this.lastHitToken = null;
                 this.knockbackVx = 0;
                 this.knockbackTimer = 0;
                 this.attackTimer = 0;
-                this.skillCooldown = 150;
-                this.slamCooldown = 220;
-                this.novaCooldown = 200;
-                this.dashCooldown = 260;
+                this.skillCooldown = Math.round(this.archetype.primaryCooldown * 0.65);
+                this.slamCooldown = Math.round(this.archetype.slamCooldown * 0.72);
+                this.novaCooldown = Math.round(this.archetype.novaCooldown * 0.78);
+                this.dashCooldown = Math.round(this.archetype.specialCooldown * 0.85);
                 this.dashTimer = 0;
+                this.slamArmed = false;
                 this.auraPulse = 0;
                 this.walkFrame = 0;
                 this.walkTimer = 0;
                 this.slowRatio = 0;
                 this.slowTimer = 0;
+                this.pressureStacks = 0;
+                this.pressureStackTimer = 0;
             }
 
             update(player) {
@@ -4712,17 +5334,20 @@
                 this.facing = dx >= 0 ? 1 : -1;
                 if (this.slowTimer > 0) this.slowTimer--;
                 else this.slowRatio = 0;
+                if (this.pressureStackTimer > 0) this.pressureStackTimer--;
+                else this.pressureStacks = 0;
 
                 // 走向玩家（慢速）或冲刺；受击时保留短暂击退，避免 AI 立刻覆盖。
                 if (this.dashTimer > 0) {
-                    this.vx = this.facing * 6.5;
+                    const dashSpeed = this.variant === 'inferno' ? 7.2 : 6.5;
+                    this.vx = this.facing * dashSpeed;
                     this.dashTimer--;
                     if (this.dashTimer % 3 === 0) {
-                        spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, '#8BC34A', 6);
+                        spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, this.archetype.aura, 6);
                     }
                 } else {
                     if (Math.abs(dx) > 40) {
-                        this.vx = (dx > 0 ? 1.1 : -1.1) * Math.max(0.55, 1 - this.slowRatio);
+                        this.vx = (dx > 0 ? this.archetype.moveSpeed : -this.archetype.moveSpeed) * Math.max(0.55, 1 - this.slowRatio);
                     } else {
                         this.vx = 0;
                     }
@@ -4739,56 +5364,35 @@
                 this.slamCooldown--;
                 this.novaCooldown--;
                 this.dashCooldown--;
+                if (this.attackTimer > 0) this.attackTimer--;
                 this.auraPulse = (this.auraPulse + 0.05) % (Math.PI * 2);
+                const phaseCooldown = this.hp / this.maxHp <= 0.5 ? 0.84 : 1;
 
-                // 远程腐蚀弹幕
+                // 不同 Boss 使用完全不同的主技能、范围技能与位移攻击。
                 if (this.skillCooldown <= 0) {
-                    this.skillCooldown = 160;
-                    const shots = 10;
-                    for (let i = 0; i < shots; i++) {
-                        const angle = -0.6 + (i / (shots - 1)) * 1.2;
-                        const speed = 3.2;
-                        projectiles.push(new Projectile(
-                            this.x + this.width / 2,
-                            this.y + this.height / 2,
-                            Math.cos(angle + (this.facing === -1 ? Math.PI : 0)) * speed,
-                            Math.sin(angle) * speed,
-                            Math.max(8, Math.round(this.damage * 0.7)),
-                            '#8BC34A'
-                        ));
-                    }
+                    this.skillCooldown = Math.round(this.archetype.primaryCooldown * phaseCooldown);
+                    this.firePrimaryAttack(player);
                 }
 
-                // 跳跃砸地
                 if (this.slamCooldown <= 0) {
-                    this.slamCooldown = 240;
-                    this.vy = -12;
-                }
-
-                // 腐蚀新星（环形弹幕）
-                if (this.novaCooldown <= 0) {
-                    this.novaCooldown = 220;
-                    const rings = 12;
-                    for (let i = 0; i < rings; i++) {
-                        const angle = (Math.PI * 2 / rings) * i;
-                        const speed = 3.8;
-                        projectiles.push(new Projectile(
-                            this.x + this.width / 2,
-                            this.y + this.height / 2,
-                            Math.cos(angle) * speed,
-                            Math.sin(angle) * speed,
-                            Math.max(10, Math.round(this.damage * 0.82)),
-                            '#A5D6A7'
-                        ));
+                    this.slamCooldown = Math.round(this.archetype.slamCooldown * phaseCooldown);
+                    if (this.variant === 'void') this.blinkNearPlayer(player);
+                    else {
+                        this.vy = this.variant === 'inferno' ? -13.5 : -12;
+                        this.slamArmed = true;
+                        this.attackTimer = 36;
+                        spawnShockwave(this.x + this.width / 2, this.y + this.height, this.archetype.aura, 48, 20, 5);
                     }
-                    spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, '#A5D6A7', 20);
                 }
 
-                // 冲刺横斩
+                if (this.novaCooldown <= 0) {
+                    this.novaCooldown = Math.round(this.archetype.novaCooldown * phaseCooldown);
+                    this.fireNovaAttack(player);
+                }
+
                 if (this.dashCooldown <= 0) {
-                    this.dashCooldown = 260;
-                    this.dashTimer = 26;
-                    this.vy = -3;
+                    this.dashCooldown = Math.round(this.archetype.specialCooldown * phaseCooldown);
+                    this.performSpecialAttack(player);
                 }
 
                 // 重力
@@ -4828,6 +5432,125 @@
                 }
             }
 
+            firePrimaryAttack(player) {
+                const originX = this.x + this.width / 2;
+                const originY = this.y + this.height / 2;
+                this.attackTimer = 30;
+                if (this.variant === 'inferno') {
+                    const dx = getWrappedDeltaX(originX, player.x + player.width / 2);
+                    const baseAngle = Math.atan2((player.y + player.height / 2) - originY, dx);
+                    for (let index = -2; index <= 2; index++) {
+                        const angle = baseAngle + index * 0.13;
+                        projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 4.2, Math.sin(angle) * 4.2 - 1.1,
+                            Math.round(this.damage * 0.72), this.archetype.projectile, 'enemy', {
+                                model: 'launcher', size: 8, gravity: 0.055, explosiveVisual: true
+                            }));
+                    }
+                    spawnShockwave(originX, originY, this.archetype.aura, 58, 20, 6);
+                } else if (this.variant === 'void') {
+                    const missileCount = this.hp / this.maxHp <= 0.5 ? 6 : 4;
+                    for (let index = 0; index < missileCount; index++) {
+                        const deployAngle = -Math.PI * 0.85 + index / Math.max(1, missileCount - 1) * Math.PI * 0.7;
+                        const deployFrames = 16 + index * 3;
+                        projectiles.push(new Projectile(originX, originY, Math.cos(deployAngle) * 3.2, Math.sin(deployAngle) * 3.2,
+                            Math.round(this.damage * 0.56), this.archetype.projectile, 'enemy', {
+                                model: 'staff', size: 6, gravity: 0, homing: true, homingTarget: player,
+                                homingDelay: deployFrames, collisionDelay: deployFrames,
+                                ignoreTerrainFrames: deployFrames + 4, homingSpeed: 7.4,
+                                turnRate: 0.12, acceleration: 0.22, launchAnchor: this,
+                                deployAngle, deployRadius: 48 + index * 2, canHitChest: false
+                            }));
+                    }
+                    spawnAttackParticles(originX, originY, this.archetype.projectile, 18);
+                    spawnShockwave(originX, originY, this.archetype.aura, 72, 24, 5);
+                } else {
+                    const shots = 10;
+                    for (let index = 0; index < shots; index++) {
+                        const angle = -0.6 + index / (shots - 1) * 1.2;
+                        const speed = 3.35;
+                        projectiles.push(new Projectile(originX, originY,
+                            Math.cos(angle + (this.facing === -1 ? Math.PI : 0)) * speed,
+                            Math.sin(angle) * speed,
+                            Math.max(8, Math.round(this.damage * 0.72)), this.archetype.projectile));
+                    }
+                    spawnAttackParticles(originX, originY, this.archetype.aura, 14);
+                }
+            }
+
+            fireNovaAttack(player) {
+                const originX = this.x + this.width / 2;
+                const originY = this.y + this.height / 2;
+                this.attackTimer = 38;
+                if (this.variant === 'inferno') {
+                    [-150, -75, 0, 75, 150].forEach((offset, index) => {
+                        const targetX = wrapWorldX(player.x + player.width / 2 + offset);
+                        const targetY = findGroundYAt(targetX, 0);
+                        spawnAreaHazard(targetX, targetY, 48,
+                            Math.round(this.damage * 0.88), 'meteor', {
+                                delay: 42 + index * 7, activeFrames: 14, color: '#FF7043', cause: 'inferno-meteor'
+                            });
+                    });
+                } else if (this.variant === 'void') {
+                    [-120, -40, 40, 120].forEach((offset, index) => {
+                        const targetX = wrapWorldX(player.x + player.width / 2 + offset);
+                        const targetY = findGroundYAt(targetX, 0) - 18;
+                        spawnAreaHazard(targetX, targetY, 42,
+                            Math.round(this.damage * 0.78), 'void', {
+                                delay: 38 + index * 7, activeFrames: 16, color: '#B388FF', cause: 'void-rift'
+                            });
+                    });
+                    for (let index = 0; index < 8; index++) {
+                        const angle = Math.PI * 2 / 8 * index;
+                        projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 3.4, Math.sin(angle) * 3.4,
+                            Math.round(this.damage * 0.52), '#B388FF', 'enemy', { model: 'staff', size: 5, gravity: 0 }));
+                    }
+                } else {
+                    for (let index = 0; index < 12; index++) {
+                        const angle = Math.PI * 2 / 12 * index;
+                        projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 3.9, Math.sin(angle) * 3.9,
+                            Math.max(10, Math.round(this.damage * 0.82)), this.archetype.accent));
+                    }
+                }
+                spawnAttackParticles(originX, originY, this.archetype.accent, 24);
+                spawnShockwave(originX, originY, this.archetype.aura, 105, 28, 7);
+            }
+
+            blinkNearPlayer(player) {
+                const oldX = this.x + this.width / 2;
+                const oldY = this.y + this.height / 2;
+                spawnAttackParticles(oldX, oldY, this.archetype.aura, 22);
+                spawnShockwave(oldX, oldY, this.archetype.aura, 58, 20, 5);
+                const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+                const side = Math.random() < 0.5 ? -1 : 1;
+                this.x = ((player.x + side * 220) % worldWidth + worldWidth) % worldWidth;
+                this.y = findGroundYAt(this.x + this.width / 2, this.height) - 2;
+                this.facing = Math.sign(getWrappedDeltaX(this.x, player.x)) || -side;
+                this.vx = 0;
+                this.vy = 0;
+                this.attackTimer = 32;
+                spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, this.archetype.accent, 24);
+                spawnShockwave(this.x + this.width / 2, this.y + this.height / 2, this.archetype.accent, 64, 22, 6);
+            }
+
+            performSpecialAttack(player) {
+                this.attackTimer = 34;
+                if (this.variant === 'void') {
+                    this.blinkNearPlayer(player);
+                    const originX = this.x + this.width / 2;
+                    const originY = this.y + this.height / 2;
+                    const dx = getWrappedDeltaX(originX, player.x + player.width / 2);
+                    const angle = Math.atan2(player.y + player.height / 2 - originY, dx);
+                    spawnEnergyBeam(originX, originY, this.archetype.accent, angle, 180, 12);
+                    projectiles.push(new Projectile(originX, originY, Math.cos(angle) * 8.2, Math.sin(angle) * 8.2,
+                        Math.round(this.damage * 0.92), this.archetype.accent, 'enemy', { model: 'staff', size: 8, gravity: 0 }));
+                    return;
+                }
+                this.dashTimer = this.variant === 'inferno' ? 34 : 26;
+                this.vy = this.variant === 'inferno' ? -1.5 : -3;
+                spawnEnergyBeam(this.x + this.width / 2, this.y + this.height / 2, this.archetype.aura,
+                    this.facing === 1 ? 0 : Math.PI, this.variant === 'inferno' ? 160 : 125, 10);
+            }
+
             handleCollision() {
                 const left = Math.floor(this.x / CONFIG.TILE_SIZE);
                 const right = Math.floor((this.x + this.width) / CONFIG.TILE_SIZE);
@@ -4841,10 +5564,32 @@
                             const tileY = ty * CONFIG.TILE_SIZE;
                             if (this.intersects(tileX, tileY, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE)) {
                                 if (this.vy > 0 && this.y + this.height - this.vy <= tileY) {
-                                    // 落地冲击波
-                                    if (this.vy > 8) {
-                                        spawnAttackParticles(this.x + this.width / 2, this.y + this.height, '#8BC34A', 18);
+                                    const impactSpeed = this.vy;
+                                    if (impactSpeed > 8) {
+                                        const impactX = this.x + this.width / 2;
+                                        const impactY = tileY;
+                                        spawnAttackParticles(impactX, impactY, this.archetype.aura, 22);
+                                        spawnShockwave(impactX, impactY, this.archetype.aura, this.variant === 'inferno' ? 150 : 118, 28, 7);
+                                        screenShake = Math.max(screenShake, this.variant === 'inferno' ? 11 : 8);
+                                        if (this.slamArmed) {
+                                            const radius = this.variant === 'inferno' ? 165 : 130;
+                                            const dx = Math.abs(getWrappedDeltaX(impactX, player.x + player.width / 2));
+                                            const dy = Math.abs((player.y + player.height) - impactY);
+                                            if (dx <= radius && dy <= 88) {
+                                                player.takeDamage(Math.round(this.damage * (this.variant === 'inferno' ? 1.12 : 0.92)), `${this.variant}-slam`);
+                                            }
+                                            if (this.variant === 'inferno') {
+                                                [-92, 0, 92].forEach((offset, index) => {
+                                                    const targetX = wrapWorldX(impactX + offset);
+                                                    const targetY = findGroundYAt(targetX, 0);
+                                                    spawnAreaHazard(targetX, targetY, 38, Math.round(this.damage * 0.58), 'meteor', {
+                                                        delay: 24 + index * 7, activeFrames: 11, color: this.archetype.projectile, cause: 'inferno-aftershock'
+                                                    });
+                                                });
+                                            }
+                                        }
                                     }
+                                    this.slamArmed = false;
                                     this.y = tileY - this.height;
                                     this.vy = 0;
                                 } else if (this.vy < 0 && this.y - this.vy >= tileY + CONFIG.TILE_SIZE) {
@@ -4895,7 +5640,8 @@
                 this.knockbackVx = Math.max(-5, Math.min(5, this.knockbackVx + knockbackDir * (knockbackForce / this.knockResist)));
                 this.knockbackTimer = Math.max(1, knockbackFrames);
                 this.vy = -3;
-                spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, '#A5D6A7', 12, 0.8);
+                spawnImpactParticles(this.x + this.width / 2, this.y + this.height / 2, this.archetype.core, 14, 0.85);
+                spawnShockwave(this.x + this.width / 2, this.y + this.height / 2, this.archetype.aura, 34, 13, 3);
                 floatingTexts.push(new FloatingText(this.x + this.width / 2, this.y - 10, `${resolved.critical ? '暴击 ' : ''}-${Math.round(amount)}`, resolved.critical ? '#FFEB3B' : '#FFF59D', resolved.critical ? 19 : 16));
                 screenShake = Math.max(screenShake, 4);
                 if (died) {
@@ -4907,15 +5653,22 @@
 
             draw(ctx) {
                 if (!this.alive) return;
-                const screenX = this.x - camera.x;
+                const screenX = getNearestWrappedScreenX(this.x + this.width / 2) - this.width / 2;
                 const screenY = this.y - camera.y;
                 ctx.save();
                 if (this.hitTimer > 0) ctx.globalAlpha = 0.85;
+                const actionPulse = this.attackTimer > 0 ? Math.sin(this.attackTimer * 0.42) : 0;
+                ctx.translate(screenX + this.width / 2, screenY + this.height / 2);
+                ctx.rotate(actionPulse * 0.035 * this.facing);
+                ctx.scale(1 + Math.abs(actionPulse) * 0.025, 1 - Math.abs(actionPulse) * 0.018);
+                ctx.translate(-(screenX + this.width / 2), -(screenY + this.height / 2));
 
-                // 腐化能量光环
+                // 各形态独立的脉冲光环。
                 ctx.save();
-                ctx.globalAlpha = 0.18;
-                ctx.fillStyle = '#8BC34A';
+                ctx.globalAlpha = 0.2 + Math.abs(Math.sin(this.auraPulse)) * 0.08;
+                ctx.fillStyle = this.archetype.aura;
+                ctx.shadowColor = this.archetype.aura;
+                ctx.shadowBlur = reducedMotion ? 6 : 18;
                 ctx.beginPath();
                 ctx.ellipse(
                     screenX + this.width / 2,
@@ -4930,35 +5683,41 @@
                 ctx.restore();
 
                 // 躯干分层装甲
-                ctx.fillStyle = '#F5F5F5';
+                ctx.fillStyle = this.archetype.armor;
                 ctx.fillRect(screenX + 6, screenY + 10, this.width - 12, this.height - 20);
-                ctx.fillStyle = '#E0E0E0';
+                ctx.fillStyle = this.variant === 'corrupt' ? '#E0E0E0' : this.archetype.accent;
+                ctx.globalAlpha *= this.variant === 'corrupt' ? 1 : 0.55;
                 ctx.fillRect(screenX + 10, screenY + 18, this.width - 20, this.height - 32);
-                ctx.fillStyle = '#BDBDBD';
+                ctx.globalAlpha = this.hitTimer > 0 ? 0.85 : 1;
+                ctx.fillStyle = this.variant === 'corrupt' ? '#BDBDBD' : this.archetype.armor;
                 ctx.fillRect(screenX + 14, screenY + 26, this.width - 28, this.height - 44);
 
                 // 肩甲与护臂
-                ctx.fillStyle = '#2E7D32';
+                ctx.fillStyle = this.archetype.aura;
                 ctx.fillRect(screenX + 4, screenY + 12, this.width - 8, 14);
                 ctx.fillRect(screenX + 2, screenY + 30, 12, 22);
                 ctx.fillRect(screenX + this.width - 14, screenY + 30, 12, 22);
 
-                // 树皮纹理
-                ctx.fillStyle = '#8BC34A';
+                // 装甲裂纹会随形态改变颜色。
+                ctx.fillStyle = this.archetype.accent;
                 for (let i = 0; i < 7; i++) {
                     ctx.fillRect(screenX + 10 + i * 8, screenY + 18 + (i * 5) % 28, 5, 10);
                 }
 
-                // 腐化核心
-                ctx.fillStyle = '#A5D6A7';
+                // 能量核心
+                ctx.save();
+                ctx.shadowColor = this.archetype.core;
+                ctx.shadowBlur = reducedMotion ? 5 : 13;
+                ctx.fillStyle = this.archetype.core;
                 ctx.fillRect(screenX + this.width / 2 - 12, screenY + 44, 24, 18);
-                ctx.fillStyle = '#C5E1A5';
+                ctx.fillStyle = this.archetype.accent;
                 ctx.fillRect(screenX + this.width / 2 - 8, screenY + 48, 16, 10);
+                ctx.restore();
 
                 // 面甲与角
                 ctx.fillStyle = '#263238';
                 ctx.fillRect(screenX + this.width / 2 - 14, screenY + 6, 28, 20);
-                ctx.fillStyle = '#9CCC65';
+                ctx.fillStyle = this.archetype.accent;
                 ctx.fillRect(screenX + this.width / 2 - 10, screenY + 12, 8, 6);
                 ctx.fillRect(screenX + this.width / 2 + 4, screenY + 12, 8, 6);
                 ctx.fillStyle = '#455A64';
@@ -4976,15 +5735,50 @@
                 ctx.fill();
 
                 // 胸口符文
-                ctx.strokeStyle = '#C5E1A5';
+                ctx.strokeStyle = this.archetype.accent;
                 ctx.lineWidth = 3;
                 ctx.strokeRect(screenX + this.width / 2 - 16, screenY + 40, 32, 28);
                 ctx.strokeRect(screenX + this.width / 2 - 8, screenY + 46, 16, 16);
 
+                // 形态武装：熔核重拳、虚空法杖、腐化枝刃。
+                ctx.save();
+                ctx.shadowColor = this.archetype.aura;
+                ctx.shadowBlur = reducedMotion ? 4 : 12;
+                if (this.variant === 'inferno') {
+                    ctx.fillStyle = '#3E2723';
+                    ctx.fillRect(screenX - 8, screenY + 42 + actionPulse * 4, 21, 24);
+                    ctx.fillRect(screenX + this.width - 13, screenY + 42 - actionPulse * 4, 21, 24);
+                    ctx.fillStyle = this.archetype.core;
+                    ctx.fillRect(screenX - 4, screenY + 46 + actionPulse * 4, 13, 12);
+                    ctx.fillRect(screenX + this.width - 9, screenY + 46 - actionPulse * 4, 13, 12);
+                } else if (this.variant === 'void') {
+                    const staffX = this.facing > 0 ? screenX + this.width + 9 : screenX - 9;
+                    ctx.strokeStyle = '#120B22';
+                    ctx.lineWidth = 7;
+                    ctx.beginPath();
+                    ctx.moveTo(staffX, screenY + 22);
+                    ctx.lineTo(staffX - this.facing * 8, screenY + 94);
+                    ctx.stroke();
+                    ctx.fillStyle = this.archetype.core;
+                    ctx.beginPath();
+                    ctx.arc(staffX + actionPulse * 3, screenY + 16, 10 + Math.abs(actionPulse) * 3, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    ctx.strokeStyle = this.archetype.aura;
+                    ctx.lineWidth = 6;
+                    ctx.beginPath();
+                    ctx.moveTo(screenX + 7, screenY + 38);
+                    ctx.lineTo(screenX - 12 - actionPulse * 8, screenY + 60);
+                    ctx.moveTo(screenX + this.width - 7, screenY + 38);
+                    ctx.lineTo(screenX + this.width + 12 + actionPulse * 8, screenY + 60);
+                    ctx.stroke();
+                }
+                ctx.restore();
+
                 // 冲刺残影
                 if (this.dashTimer > 0) {
                     ctx.globalAlpha = 0.3;
-                    ctx.fillStyle = '#8BC34A';
+                    ctx.fillStyle = this.archetype.aura;
                     for (let i = 0; i < 3; i++) {
                         ctx.fillRect(screenX - i * 12 * this.facing, screenY + 10, this.width, this.height - 12);
                     }
@@ -5001,9 +5795,9 @@
                 ctx.fillStyle = 'rgba(0,0,0,0.6)';
                 ctx.fillRect(barX, barY, barWidth, 16);
                 const pct = this.hp / this.maxHp;
-                ctx.fillStyle = '#8BC34A';
+                ctx.fillStyle = this.archetype.aura;
                 ctx.fillRect(barX, barY, barWidth * pct, 16);
-                ctx.strokeStyle = '#C5E1A5';
+                ctx.strokeStyle = this.archetype.accent;
                 ctx.lineWidth = 2;
                 ctx.strokeRect(barX, barY, barWidth, 16);
                 ctx.fillStyle = '#FFF';
@@ -5278,7 +6072,7 @@
 
             if (player.weapon.isRanged) {
                 const ammoText = player.reloadTimer > 0
-                    ? `装填 ${Math.ceil(player.reloadTimer / 60 * 10) / 10}s`
+                    ? `装填 ${Math.ceil(player.reloadTimer / 60 * 10) / 10} 秒`
                     : `弹药 ${player.ammo}/${player.getMagazineSize()}`;
                 ctx.fillStyle = player.reloadTimer > 0 ? '#80CBC4' : player.ammo === 0 ? '#FF8A80' : '#FFF59D';
                 ctx.fillText(ammoText, CONFIG.CANVAS_WIDTH - 214, 81);
@@ -5291,20 +6085,21 @@
                 }
             } else {
                 ctx.fillStyle = '#B3E5FC';
-                ctx.fillText(`招式: ${player.weapon.attackProfile.name} · 间隔 ${(player.weapon.attackProfile.cooldown / 60).toFixed(2)}s`, CONFIG.CANVAS_WIDTH - 214, 81);
+                ctx.fillText(`招式: ${player.weapon.attackProfile.name} · 间隔 ${(player.weapon.attackProfile.cooldown / 60).toFixed(2)} 秒`, CONFIG.CANVAS_WIDTH - 214, 81);
             }
 
             drawPassiveHud();
             if (activeBoss && activeBoss.alive) {
                 const bossBarY = touchMode ? 114 : 52;
                 activeBoss.drawHealthBar(ctx, bossBarY);
-                ctx.fillStyle = '#FFB300';
+                ctx.fillStyle = activeBoss.archetype?.accent || '#FFB300';
                 ctx.font = 'bold 14px "Courier New", monospace';
                 ctx.textAlign = 'center';
                 ctx.strokeStyle = '#241200';
                 ctx.lineWidth = 4;
-                ctx.strokeText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
-                ctx.fillText('BOSS 来袭: 白桦腐竹', CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
+                const bossTitle = `BOSS 来袭: ${activeBoss.name} · ${activeBoss.title}`;
+                ctx.strokeText(bossTitle, CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
+                ctx.fillText(bossTitle, CONFIG.CANVAS_WIDTH / 2, bossBarY + 38);
             }
         }
 
@@ -5434,14 +6229,18 @@
                 drawWrappedCanvasText(description, rect.x + 18, rect.y + 103, 28, 18, 3, 'left');
                 if (def.mode === 'quest') {
                     const thresholds = def.relativeToMaxHp ? def.questThresholds.map(value => value * player.maxHp) : def.questThresholds;
-                    const next = entry.stage < thresholds.length ? Math.ceil(thresholds[entry.stage]) : '完成';
+                    const isDistanceQuest = def.id === 'wayfarer';
+                    const currentProgress = isDistanceQuest ? formatTileDistance(entry.progress) : Math.floor(entry.progress);
+                    const next = entry.stage < thresholds.length
+                        ? (isDistanceQuest ? formatTileDistance(thresholds[entry.stage]) : Math.ceil(thresholds[entry.stage]))
+                        : '完成';
                     ctx.fillStyle = 'rgba(255,255,255,0.14)';
                     ctx.fillRect(rect.x + 18, rect.y + 150, rect.w - 36, 8);
                     ctx.fillStyle = getPassiveTierPaint(def, rect, now);
                     ctx.fillRect(rect.x + 18, rect.y + 150, (rect.w - 36) * getPassiveQuestProgress(def, entry), 8);
                     ctx.fillStyle = '#B0BEC5';
                     ctx.font = '10px "Courier New", monospace';
-                    ctx.fillText(`进度 ${Math.floor(entry.progress)} / ${next}`, rect.x + 18, rect.y + 145);
+                    ctx.fillText(`进度 ${currentProgress} / ${next}`, rect.x + 18, rect.y + 145);
                 }
                 ctx.textAlign = 'center';
             });
@@ -5464,6 +6263,8 @@
             player.hp = player.maxHp;
             player.tempShield = 0;
             projectiles.length = 0;
+            areaHazards.length = 0;
+            combatEffects.length = 0;
             if (gameMode === 'story' && currentWave === CONFIG.BOSS_WAVE) {
                 // 通关
                 gameState = 'win';
@@ -5808,6 +6609,8 @@
         function clearCombatTransients(resetInvincibility = true) {
             projectiles.length = 0;
             particles.length = 0;
+            combatEffects.length = 0;
+            areaHazards.length = 0;
             floatingTexts.length = 0;
             activeBoss = null;
             treasureChest = null;
@@ -5938,9 +6741,9 @@
                     ctx.fillStyle = '#4FC3F7';
                     ctx.font = '14px "Courier New", monospace';
                     if (weapon.isRanged) {
-                        ctx.fillText(`弹匣: ${weapon.baseMagazine} · 装填: ${(weapon.reloadFrames / 60).toFixed(1)}s`, cardX + cardWidth / 2, cardY + 205, cardWidth - 22);
+                        ctx.fillText(`弹匣: ${weapon.baseMagazine} · 装填: ${(weapon.reloadFrames / 60).toFixed(1)} 秒`, cardX + cardWidth / 2, cardY + 205, cardWidth - 22);
                     } else {
-                        ctx.fillText(`${weapon.attackProfile.name} · 范围 +${weapon.rangeBonus} · ${(weapon.attackProfile.cooldown / 60).toFixed(2)}s`, cardX + cardWidth / 2, cardY + 205, cardWidth - 22);
+                        ctx.fillText(`${weapon.attackProfile.name} · 距离 ${formatSignedTileDistance(weapon.rangeBonus)} · ${(weapon.attackProfile.cooldown / 60).toFixed(2)} 秒`, cardX + cardWidth / 2, cardY + 205, cardWidth - 22);
                     }
 
                     ctx.fillStyle = '#8BC34A';
@@ -5975,7 +6778,7 @@
 
                     ctx.fillStyle = '#4FC3F7';
                     if (weapon.rangeBonus) {
-                        ctx.fillText(`近战范围: +${weapon.rangeBonus}`, cardX + cardWidth / 2, cardY + 200);
+                        ctx.fillText(`近战距离: ${formatSignedTileDistance(weapon.rangeBonus)}`, cardX + cardWidth / 2, cardY + 200);
                     } else if (weapon.ammoBonus) {
                         ctx.fillText(`远程弹容: +${weapon.ammoBonus}`, cardX + cardWidth / 2, cardY + 200);
                     } else if (weapon.reloadSpeedBonus) {
@@ -6367,10 +7170,10 @@
             ctx.fillStyle = '#B3E5FC';
             ctx.font = '14px "Courier New", monospace';
             ctx.fillText(`最终攻击力 ${formatStat(summary.finalWeapon.attackDamage)} · 最大生命 ${summary.maxHp} · 承受伤害 ${Math.round(summary.damageTaken)}`, CONFIG.CANVAS_WIDTH / 2, 352);
-            ctx.fillText(`近战出手 ${summary.meleeAttacks} · 远程开火 ${summary.rangedAttacks} · 发射物 ${summary.projectilesFired}`, CONFIG.CANVAS_WIDTH / 2, 378);
+            ctx.fillText(`近战出手 ${summary.meleeAttacks} · 远程开火 ${summary.rangedAttacks} · 总发射物 ${summary.projectilesFired}`, CONFIG.CANVAS_WIDTH / 2, 378);
             ctx.fillStyle = '#90A4AE';
             ctx.font = '11px "Courier New", monospace';
-            ctx.fillText(`永久成长：攻击 +${summary.upgrades.damage} · 生命 +${summary.upgrades.hp} · 范围 +${summary.upgrades.range} · 弹容 +${summary.upgrades.ammo}`, CONFIG.CANVAS_WIDTH / 2, 398);
+            ctx.fillText(`永久成长：攻击 +${summary.upgrades.damage} · 生命 +${summary.upgrades.hp} · 距离 ${formatSignedTileDistance(summary.upgrades.range)} · 弹容 +${summary.upgrades.ammo}`, CONFIG.CANVAS_WIDTH / 2, 398);
             ctx.fillText(`本段奖励：新武器 ${summary.weaponsClaimed} · 碎片 ${summary.fragmentsClaimed} · 被动 ${summary.passivesClaimed} · 白桦币 +${summary.birchCoinsEarned}/-${summary.birchCoinsSpent}（余 ${summary.birchCoins}）`, CONFIG.CANVAS_WIDTH / 2, 416, 636);
 
             drawTitleButton(GAMEOVER_BUTTONS.restart, '重新远征 [Enter]');
@@ -6404,10 +7207,24 @@
             return Number.isInteger(value) ? value : Number(value.toFixed(2));
         }
 
+        function formatTileDistance(worldUnits) {
+            return `${formatStat((Number(worldUnits) || 0) / CONFIG.TILE_SIZE)} 格`;
+        }
+
+        function formatSignedTileDistance(worldUnits) {
+            const tiles = (Number(worldUnits) || 0) / CONFIG.TILE_SIZE;
+            if (tiles === 0) return '0 格';
+            return `${tiles > 0 ? '+' : '-'}${formatStat(Math.abs(tiles))} 格`;
+        }
+
         function getDeathCauseLabel(cause) {
             const labels = {
                 fall: '坠落重创', laser: '激光命中', 'boss-contact': 'Boss 撞击',
-                'enemy-projectile': '敌方投射物', 'elite-contact': '精英近身', 'enemy-contact': '敌人近身'
+                'enemy-projectile': '敌方投射物', 'elite-contact': '精英近身', 'enemy-contact': '敌人近身',
+                'orc-slam': '蛮兽震地', 'storm-call': '雷暴轰击', 'inferno-meteor': '熔核陨星',
+                'inferno-aftershock': '熔核余震', 'void-rift': '虚空裂隙', 'corrupt-slam': '腐化震地',
+                'inferno-slam': '熔核重踏', 'claw-contact': '腐尸爪击', 'dash-contact': '地精突刺',
+                'hornCharge-contact': '狂角冲锋', 'shieldBash-contact': '盾卫猛击', 'mimicBite-contact': '宝箱怪撕咬'
             };
             return labels[cause] || '战斗中阵亡';
         }
@@ -6843,8 +7660,12 @@
             { type: 'tank', minWave: 2, weight: 18 },
             { type: 'shooter', minWave: 3, weight: 16 },
             { type: 'leaper', minWave: 4, weight: 14 },
+            { type: 'charger', minWave: 4, weight: 12 },
+            { type: 'bombardier', minWave: 5, weight: 11 },
+            { type: 'warlock', minWave: 6, weight: 10 },
             { type: 'warden', minWave: 3, weight: 16 },
-            { type: 'prism', minWave: 5, weight: 13 }
+            { type: 'prism', minWave: 5, weight: 13 },
+            { type: 'tempest', minWave: 7, weight: 9 }
         ];
 
         function chooseEnemyType(wave, spawnedTypeCounts = {}) {
@@ -6926,6 +7747,8 @@
             enemies = [];
             activeBoss = null;
             projectiles.length = 0;
+            areaHazards.length = 0;
+            combatEffects.length = 0;
             waveCompletionHandled = false;
             waveObjective = 'combat';
             chestPromptShown = false;
@@ -6943,9 +7766,9 @@
             if (isBossWave(currentWave)) {
                 totalEnemiesInWave = 1;
                 enemiesRemaining = 1;
-                activeBoss = new BirchCorruptBoss(currentWave);
+                activeBoss = createBossForWave(currentWave, gameMode);
                 startBossMusic();
-                announce(`第 ${currentWave} 波，Boss 白桦腐竹来袭。`);
+                announce(`第 ${currentWave} 波，Boss ${activeBoss.name}·${activeBoss.title}来袭。`);
                 return;
             }
 
@@ -7677,15 +8500,29 @@
             // 更新投射物
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const p = projectiles[i];
-                if (!p.update() || isSolidAtWorld(p.x, p.y)) {
-                    if (isSolidAtWorld(p.x, p.y)) spawnImpactParticles(p.x, p.y, p.color, 4, 0.35);
+                const projectileActive = p.update();
+                const hitSolid = projectileActive && isSolidAtWorld(p.x, p.y);
+                if (!projectileActive || (hitSolid && !p.ignoresTerrain())) {
+                    if (hitSolid) {
+                        spawnImpactParticles(p.x, p.y, p.color, p.explosiveVisual ? 18 : 4, p.explosiveVisual ? 0.9 : 0.35);
+                        if (p.explosiveVisual) {
+                            spawnShockwave(p.x, p.y, p.color, 42, 18, 5);
+                            screenShake = Math.max(screenShake, 3.5);
+                        }
+                    }
                     projectiles.splice(i, 1);
                     continue;
                 }
+                if (!p.canCollide()) continue;
                 // 碰撞检测
                 if (p.owner === 'enemy') {
                     if (player.intersects(p.x, p.y, p.size, p.size)) {
                         player.takeDamage(p.dmg, 'enemy-projectile');
+                        spawnImpactParticles(p.x, p.y, p.color, p.explosiveVisual ? 20 : 7, p.explosiveVisual ? 0.95 : 0.55);
+                        if (p.explosiveVisual) {
+                            spawnShockwave(p.x, p.y, p.color, 46, 19, 6);
+                            screenShake = Math.max(screenShake, 5);
+                        }
                         projectiles.splice(i, 1);
                         if (gameState !== 'playing') return;
                     }
@@ -7711,7 +8548,7 @@
                         }
                     }
 
-                    if (!consumed && treasureChest?.alive && !p.hitTargets.has(treasureChest) &&
+                    if (!consumed && p.canHitChest && treasureChest?.alive && !p.hitTargets.has(treasureChest) &&
                         treasureChest.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
                         p.hitTargets.add(treasureChest);
                         if (treasureChest.takeDamage(p.token)) consumed = true;
@@ -7732,10 +8569,20 @@
                     }
 
                     if (consumed) {
-                        spawnImpactParticles(p.x, p.y, p.color, 8, 0.6);
+                        spawnImpactParticles(p.x, p.y, p.color, p.explosiveVisual ? 22 : 8, p.explosiveVisual ? 1.05 : 0.6);
+                        if (p.explosiveVisual) {
+                            spawnShockwave(p.x, p.y, '#FFB300', 48, 20, 6);
+                            spawnShockwave(p.x, p.y, '#FFF8E1', 28, 13, 3);
+                            screenShake = Math.max(screenShake, 4.5);
+                        }
                         projectiles.splice(i, 1);
                     }
                 }
+            }
+
+            for (let i = areaHazards.length - 1; i >= 0; i--) {
+                if (!areaHazards[i].update()) areaHazards.splice(i, 1);
+                if (gameState !== 'playing') return;
             }
 
             // 波次完成统一延迟到本逻辑帧全部伤害结算后；同帧致命伤害优先于奖励/通关。
@@ -7766,6 +8613,10 @@
 
             for (let i = floatingTexts.length - 1; i >= 0; i--) {
                 if (!floatingTexts[i].update()) floatingTexts.splice(i, 1);
+            }
+
+            for (let i = combatEffects.length - 1; i >= 0; i--) {
+                if (!combatEffects[i].update()) combatEffects.splice(i, 1);
             }
 
             // 天气粒子
@@ -7816,6 +8667,9 @@
             // 绘制地图
             drawMap();
 
+            // 怪物和 Boss 技能先画地面预警，攻击落下时再与前景特效叠加。
+            areaHazards.forEach(hazard => hazard.draw(ctx));
+
             // 每张地图最多一个宝箱；可能在受击时显露为宝箱怪。
             treasureChest?.draw(ctx);
             drawChestObjectiveGuide();
@@ -7834,6 +8688,8 @@
 
             // 绘制粒子
             particles.forEach(p => p.draw(ctx));
+
+            combatEffects.forEach(effect => effect.draw(ctx));
 
             floatingTexts.forEach(text => text.draw(ctx));
 

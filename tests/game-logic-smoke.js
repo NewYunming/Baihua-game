@@ -215,9 +215,9 @@ const assertions = `
         'hp-1': ['hpBonus', 24, '永久生命上限 +24'],
         'hp-2': ['hpBonus', 44, '永久生命上限 +44'],
         'hp-3': ['hpBonus', 68, '永久生命上限 +68'],
-        'range-1': ['rangeBonus', 14, '近战攻击距离 +14'],
-        'range-2': ['rangeBonus', 24, '近战攻击距离 +24'],
-        'range-3': ['rangeBonus', 36, '近战攻击距离 +36'],
+        'range-1': ['rangeBonus', 14, '近战攻击距离 +0.44 格'],
+        'range-2': ['rangeBonus', 24, '近战攻击距离 +0.75 格'],
+        'range-3': ['rangeBonus', 36, '近战攻击距离 +1.13 格'],
         'ammo-1': ['ammoBonus', 4, '远程弹药容量 +4'],
         'ammo-2': ['ammoBonus', 8, '远程弹药容量 +8'],
         'ammo-3': ['ammoBonus', 12, '远程弹药容量 +12'],
@@ -232,6 +232,13 @@ const assertions = `
         assert(!fragment.desc.includes('翻倍'), fragment.id + ' 出现不应展示的调整说明');
     }
     assert(CONFIG.RANGED_FRAGMENT_EFFICIENCY === 0.66 && ENCHANT_POOL.filter(fragment => fragment.damageBonus).every(fragment => fragment.desc.includes('远程效能 66%')), '攻击碎片没有明确使用 66% 远程效能');
+    const playerFacingMechanicText = [
+        ...ENCHANT_POOL.map(fragment => fragment.desc),
+        ...PASSIVE_LIBRARY.flatMap(passive => passive.descriptions),
+        ...Object.values(WEAPON_DATABASE).flat().map(weapon => weapon.effect)
+    ].join('\\n');
+    assert(!/\\d\\s*(?:帧|像素)/.test(playerFacingMechanicText), '面向玩家的机制文案仍使用帧或像素作为单位');
+    assert(formatTileDistance(1920) === '60 格' && formatSignedTileDistance(-5) === '-0.16 格', '内部距离没有正确换算为格或负距离被吞掉');
 
     // 六种地形必须拥有独立音乐主题。
     const biomeMusicKeys = Object.values(BIOMES).map(biome => biome.musicKey);
@@ -404,6 +411,89 @@ const assertions = `
     assert(enemies.filter(enemy => enemy.type === 'prism').length === 1, '确定性生成下激光精英不是恰好 1 个');
     assert(enemies.filter(enemy => ['warden', 'prism'].includes(enemy.type)).every(enemy => enemy.isEliteType), '特殊敌人未标记为精英');
     assert(!['warden', 'prism'].includes(chooseEnemyType(5, { warden: 1, prism: 1 })), '达到单波上限后仍能抽到受限精英');
+
+    // 新普通怪、雷鸣精英与多形态 Boss 必须具有独立技能产物。
+    for (const type of ['charger', 'bombardier', 'warlock', 'tempest']) {
+        assert(ENEMY_TYPES[type] && ENEMY_SPAWN_TABLE.some(entry => entry.type === type), '新增怪物未接入出生表：' + type);
+    }
+    assert(ENEMY_TYPES.tempest.elite && ENEMY_TYPES.tempest.spawnCap === 1, '雷鸣祭司没有作为每图最多一个的精英怪');
+    assert(chooseEnemyType(7, { warden: 1, prism: 1, tempest: 1 }) !== 'tempest', '雷鸣祭司达到上限后仍可继续抽取');
+    const strengthenedZombie = new Enemy(0, 0, 1, 'zombie');
+    assert(strengthenedZombie.maxHp > ENEMY_TYPES.zombie.baseHp && strengthenedZombie.damage > ENEMY_TYPES.zombie.baseDmg, '普通怪没有获得适度的全局强度提升');
+
+    gameState = 'playing';
+    camera.x = 0;
+    player.x = 420;
+    player.y = findGroundYAt(player.x, player.height);
+    const skillPlayer = { x: player.x, y: player.y, width: player.width, height: player.height, takeDamage() {} };
+    const charger = new Enemy(190, findGroundYAt(190, ENEMY_TYPES.charger.height), 7, 'charger');
+    charger.aggro = true;
+    charger.onGround = true;
+    charger.skillCooldown = 0;
+    charger.update(skillPlayer);
+    assert(charger.skillTimer > 14 && charger.attackAnimTimer > 0, '狂角战兽没有进入可读的冲锋蓄力动作');
+    for (let frame = 0; frame < 24; frame++) charger.update(skillPlayer);
+    assert(charger.abilityVxFrames > 0 && Math.abs(charger.abilityVx) > charger.speed * 3, '狂角战兽蓄力后没有高速冲锋');
+
+    projectiles.length = 0;
+    const bombardier = new Enemy(220, findGroundYAt(220, ENEMY_TYPES.bombardier.height), 7, 'bombardier');
+    bombardier.aggro = true;
+    bombardier.onGround = true;
+    bombardier.shootCooldown = 0;
+    bombardier.update(skillPlayer);
+    assert(projectiles.length === 2 && projectiles.every(projectile => projectile.model === 'launcher' && projectile.explosiveVisual), '腐沼投弹手没有投出两枚可辨识炸弹');
+
+    projectiles.length = 0;
+    const warlock = new Enemy(220, findGroundYAt(220, ENEMY_TYPES.warlock.height), 7, 'warlock');
+    warlock.aggro = true;
+    warlock.onGround = true;
+    warlock.shootCooldown = 0;
+    warlock.update(skillPlayer);
+    assert(projectiles.length === 3 && projectiles.every(projectile => projectile.model === 'staff'), '虚空术士没有释放三连暗影弹');
+
+    areaHazards.length = 0;
+    const tempest = new Enemy(220, findGroundYAt(220, ENEMY_TYPES.tempest.height), 7, 'tempest');
+    tempest.aggro = true;
+    tempest.onGround = true;
+    tempest.shootCooldown = 0;
+    tempest.update(skillPlayer);
+    assert(areaHazards.length === 3 && areaHazards.every(hazard => hazard.type === 'lightning'), '雷鸣祭司没有生成三处落雷预警');
+    areaHazards.forEach(hazard => hazard.draw(ctx));
+
+    const storyBoss = createBossForWave(10, 'story');
+    const infernoBoss = createBossForWave(20, 'endless');
+    const voidBoss = createBossForWave(30, 'endless');
+    const loopBoss = createBossForWave(40, 'endless');
+    assert(storyBoss.variant === 'corrupt' && infernoBoss.variant === 'inferno' && voidBoss.variant === 'void' && loopBoss.variant === 'corrupt', '无尽 Boss 没有按腐化/熔核/虚空形态轮换');
+    assert(new Set([storyBoss.name, infernoBoss.name, voidBoss.name]).size === 3 && [storyBoss, infernoBoss, voidBoss].every(boss => boss.isBoss), 'Boss 形态名称或统一 Boss 标记错误');
+    for (const boss of [storyBoss, infernoBoss, voidBoss]) {
+        boss.draw(ctx);
+        boss.drawHealthBar(ctx);
+    }
+
+    projectiles.length = 0;
+    areaHazards.length = 0;
+    infernoBoss.firePrimaryAttack(skillPlayer);
+    infernoBoss.fireNovaAttack(skillPlayer);
+    assert(projectiles.filter(projectile => projectile.model === 'launcher').length === 5 && areaHazards.filter(hazard => hazard.type === 'meteor').length === 5, '熔核巨像缺少火球齐射或陨星预警');
+    projectiles.length = 0;
+    areaHazards.length = 0;
+    voidBoss.firePrimaryAttack(skillPlayer);
+    voidBoss.fireNovaAttack(skillPlayer);
+    assert(projectiles.filter(projectile => projectile.homing).length >= 4 && areaHazards.filter(hazard => hazard.type === 'void').length === 4, '虚空巫王缺少追踪弹或裂隙攻击');
+    voidBoss.pressureStacks = 3;
+    voidBoss.pressureStackTimer = 1;
+    voidBoss.update(skillPlayer);
+    voidBoss.update(skillPlayer);
+    assert(voidBoss.pressureStacks === 0, 'Boss 身上的高压锅层数不会正常过期');
+
+    const worldWidthForHazard = MAP_WIDTH * CONFIG.TILE_SIZE;
+    camera.x = worldWidthForHazard - CONFIG.CANVAS_WIDTH;
+    const wrappedHazardX = getNearestWrappedScreenX(20);
+    assert(wrappedHazardX > CONFIG.CANVAS_WIDTH - 40 && wrappedHazardX < CONFIG.CANVAS_WIDTH + 40, '环形地图边界的区域技能预警不可见');
+    camera.x = 0;
+    projectiles.length = 0;
+    areaHazards.length = 0;
 
     // 怪物数量在主线与无尽都硬封顶 20，之后只继续增长强度；随机混沌怪已取消。
     assert(CONFIG.MAX_ENEMIES_PER_WAVE === 20, '怪物硬上限不是 20');
@@ -806,15 +896,46 @@ const assertions = `
 
     // 用户指定的可升级飞弹与吸血数值，以及击杀/移动/灼烧任务进度都必须真实生效。
     player.resetProgression();
+    player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
+    assert(CONFIG.MISSILE_ATTACK_COEFFICIENT === 0.22 && CONFIG.PRESSURE_ATTACK_COEFFICIENT === 0.12, '飞弹或高压锅攻击系数不是 22%/12%');
     const missileTarget = new Enemy(player.x + 160, player.y, 1, 'zombie');
     enemies = [missileTarget];
     activeBoss = null;
     projectiles.length = 0;
-    player.missileCooldown = 0;
-    player.triggerAttackPassives();
-    assert(projectiles.length === 2 && projectiles.every(projectile => projectile.damageSource === 'missile' && projectile.knockback === 0), '金色飞弹没有按 1/2/3/4/5 枚升级或仍有击退');
+    gameMode = 'story';
+    runStats = createRunStats('story');
+    const expectedMissileDamage = player.getAttackEventPower() * CONFIG.MISSILE_ATTACK_COEFFICIENT;
+    player.tryAttack();
+    player.tryAttack();
+    assert(projectiles.length === 4 && projectiles.every(projectile => projectile.damageSource === 'missile' && projectile.model === 'missile' && projectile.knockback === 0), '金色飞弹没有在每次攻击触发，或仍有击退');
+    assert(projectiles.every(projectile => Math.abs(projectile.dmg - expectedMissileDamage) < 1e-9), '飞弹伤害没有按本次攻击总伤害的 22% 计算');
+    assert(runStats.meleeAttacks === 2 && runStats.projectilesFired === 4, '真实近战出手没有逐次触发飞弹并计入发射物统计');
+    const guidedMissile = projectiles[0];
+    assert(!guidedMissile.canCollide() && guidedMissile.ignoresTerrain(), '飞弹部署阶段可以提前碰撞或被地形截断');
+    const deployDelay = guidedMissile.homingDelay;
+    for (let frame = 0; frame < deployDelay + 28; frame++) guidedMissile.update();
+    assert(guidedMissile.age > deployDelay && guidedMissile.homingTarget === missileTarget && guidedMissile.vx > 0, '飞弹没有先在玩家周围部署再转向目标');
+
+    player.setWeapon(gun);
+    player.ammo = player.getMagazineSize();
+    projectiles.length = 0;
+    const ammoBeforeMissileShot = player.ammo;
+    player.fireRangedWeapon();
+    assert(player.ammo === ammoBeforeMissileShot - 1 && projectiles.filter(projectile => projectile.damageSource === 'missile').length === 2, '远程武器每消耗一发弹药没有触发一次飞弹组');
+    assert(runStats.rangedAttacks === 1 && runStats.projectilesFired === 7, '远程弹丸和被动飞弹没有共同计入总发射物统计');
+
+    player.resetProgression();
+    player.addOrUpgradePassive(PASSIVE_BY_ID.pressure_cooker);
+    const pressureTarget = new Enemy(player.x + 50, player.y, 1, 'tank');
+    enemies = [pressureTarget];
+    activeBoss = null;
+    const pressureDamage = player.getAttackEventPower() * CONFIG.PRESSURE_ATTACK_COEFFICIENT;
+    const pressureHpBefore = pressureTarget.hp;
+    player.triggerPressureCooker(0);
+    assert(Math.abs((pressureHpBefore - pressureTarget.hp) - pressureDamage) < 1e-9 && pressureTarget.pressureStacks === 1, '高压锅没有按当前武器攻击总伤害的 12% 与层数计算');
+
     player.resetProgression();
     for (let i = 0; i < 3; i++) player.addOrUpgradePassive(PASSIVE_BY_ID.blood_pact);
     assert(getPassiveValue('blood_pact', 3) === 0.09, '炫彩吸血没有按 5/7/9/11/13% 升级');
