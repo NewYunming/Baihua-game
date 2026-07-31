@@ -894,24 +894,30 @@ const assertions = `
     player.updatePassiveEffects();
     assert(player.lastStandActive && player.getPassiveDamageMultiplier() === 1.25 && player.getIncomingDamageMultiplier() === 0.8, '选择背水一战后低血量攻防效果未生效');
 
-    // 用户指定的可升级飞弹与吸血数值，以及击杀/移动/灼烧任务进度都必须真实生效。
+    // 飞弹只能由真实武器命中触发，每次仅锁定该命中目标并发射一枚。
     player.resetProgression();
     player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
     assert(CONFIG.MISSILE_ATTACK_COEFFICIENT === 0.22 && CONFIG.PRESSURE_ATTACK_COEFFICIENT === 0.12, '飞弹或高压锅攻击系数不是 22%/12%');
-    const missileTarget = new Enemy(player.x + 160, player.y, 1, 'zombie');
+    assert(PASSIVE_BY_ID.missile_barrage.descriptions.every(description => description.includes('实际命中') && description.includes('1 枚')), '飞弹描述没有明确实际命中与单枚规则');
+    const missileTarget = new Enemy(player.x + 160, player.y, 1, 'tank');
     enemies = [missileTarget];
     activeBoss = null;
     projectiles.length = 0;
     gameMode = 'story';
     runStats = createRunStats('story');
-    const expectedMissileDamage = player.getAttackEventPower() * CONFIG.MISSILE_ATTACK_COEFFICIENT;
+    const meleeHitDamage = player.getAttackDamage();
+    const expectedMissileDamage = meleeHitDamage * CONFIG.MISSILE_ATTACK_COEFFICIENT * 2;
     player.tryAttack();
-    player.tryAttack();
-    assert(projectiles.length === 4 && projectiles.every(projectile => projectile.damageSource === 'missile' && projectile.model === 'missile' && projectile.knockback === 0), '金色飞弹没有在每次攻击触发，或仍有击退');
-    assert(projectiles.every(projectile => Math.abs(projectile.dmg - expectedMissileDamage) < 1e-9), '飞弹伤害没有按本次攻击总伤害的 22% 计算');
-    assert(runStats.meleeAttacks === 2 && runStats.projectilesFired === 4, '真实近战出手没有逐次触发飞弹并计入发射物统计');
+    assert(projectiles.length === 0 && runStats.projectilesFired === 0, '近战仅出手或未命中时提前发射了飞弹');
+    missileTarget.takeDamage(meleeHitDamage, player.facing, player.getAttackKnockback(), 'missile-melee-hit', 9, { source: 'weapon' });
+    assert(projectiles.length === 1 && projectiles[0].damageSource === 'missile' && projectiles[0].model === 'missile' && projectiles[0].knockback === 0, '近战实际命中没有只发射一枚飞弹');
+    const missileDecoy = new Enemy(player.x + 80, player.y, 1, 'tank');
+    assert(projectiles[0].homingTarget === missileTarget && projectiles[0].targetLock, '近战命中飞弹没有锁定被命中的敌人');
+    assert(projectiles[0].canHitTarget(missileTarget) && !projectiles[0].canHitTarget(missileDecoy), '锁定飞弹仍可命中路径上的其他敌人');
+    assert(Math.abs(projectiles[0].dmg - expectedMissileDamage) < 1e-9, '二级飞弹没有把单枚伤害提高至命中基础伤害的 44%');
+    assert(runStats.meleeAttacks === 1 && runStats.projectilesFired === 1, '近战命中后的单枚飞弹统计错误');
     const guidedMissile = projectiles[0];
     assert(!guidedMissile.canCollide() && guidedMissile.ignoresTerrain(), '飞弹部署阶段可以提前碰撞或被地形截断');
     const deployDelay = guidedMissile.homingDelay;
@@ -923,9 +929,38 @@ const assertions = `
     projectiles.length = 0;
     const ammoBeforeMissileShot = player.ammo;
     player.fireRangedWeapon();
-    assert(player.ammo === ammoBeforeMissileShot - 1 && projectiles.filter(projectile => projectile.damageSource === 'missile').length === 2, '远程武器每消耗一发弹药没有触发一次飞弹组');
-    assert(runStats.rangedAttacks === 1 && runStats.projectilesFired === 7, '远程弹丸和被动飞弹没有共同计入总发射物统计');
+    const weaponProjectile = projectiles.find(projectile => projectile.damageSource === 'weapon');
+    assert(player.ammo === ammoBeforeMissileShot - 1 && weaponProjectile && !projectiles.some(projectile => projectile.damageSource === 'missile'), '子弹尚未命中就提前发射了飞弹');
+    missileTarget.takeDamage(weaponProjectile.dmg, Math.sign(weaponProjectile.vx), weaponProjectile.knockback,
+        weaponProjectile.token, weaponProjectile.knockbackFrames, { source: weaponProjectile.damageSource });
+    const rangedMissiles = projectiles.filter(projectile => projectile.damageSource === 'missile');
+    assert(rangedMissiles.length === 1 && rangedMissiles[0].homingTarget === missileTarget, '子弹命中没有只向该目标发射一枚飞弹');
+    assert(Math.abs(rangedMissiles[0].dmg - weaponProjectile.dmg * CONFIG.MISSILE_ATTACK_COEFFICIENT * 2) < 1e-9, '子弹命中飞弹没有按单次命中基础伤害升级');
+    const projectileCountBeforeMissileDamage = projectiles.length;
+    missileTarget.takeDamage(rangedMissiles[0].dmg, 0, 0, rangedMissiles[0].token, 0, {
+        source: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
+    });
+    assert(projectiles.length === projectileCountBeforeMissileDamage, '飞弹伤害递归生成了新飞弹');
+    assert(runStats.rangedAttacks === 1 && runStats.projectilesFired === 3, '子弹与两次真实命中的单枚飞弹统计错误');
 
+    projectiles.length = 0;
+    const bossMissileTarget = createBossForWave(10, 'story');
+    activeBoss = bossMissileTarget;
+    bossMissileTarget.takeDamage(1, 1, 0, 'missile-boss-hit', 0, { source: 'weapon' });
+    assert(projectiles.length === 1 && projectiles[0].homingTarget === bossMissileTarget && projectiles[0].targetLock, 'Boss 非致命命中没有生成严格锁定该 Boss 的单枚飞弹');
+    const lockedBossMissile = projectiles[0];
+    bossMissileTarget.alive = false;
+    lockedBossMissile.age = lockedBossMissile.homingDelay;
+    assert(!lockedBossMissile.update() && lockedBossMissile.acquireHomingTarget() === null, '锁定目标死亡后飞弹仍继续存在或改追其他敌人');
+
+    projectiles.length = 0;
+    activeBoss = null;
+    const lethalMissileTarget = new Enemy(player.x + 80, player.y, 1, 'zombie');
+    lethalMissileTarget.hp = 1;
+    lethalMissileTarget.takeDamage(10, 1, 0, 'missile-lethal-hit', 0, { source: 'weapon' });
+    assert(!lethalMissileTarget.alive && projectiles.length === 0, '致命一击仍向已经死亡的目标发射无效飞弹');
+
+    // 用户指定的吸血数值，以及击杀/移动/灼烧任务进度都必须真实生效。
     player.resetProgression();
     player.addOrUpgradePassive(PASSIVE_BY_ID.pressure_cooker);
     const pressureTarget = new Enemy(player.x + 50, player.y, 1, 'tank');

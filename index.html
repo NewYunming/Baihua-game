@@ -1115,11 +1115,11 @@
                 id: 'missile_barrage', icon: 'missile-fan', name: '白桦弹幕', tier: 'GOLD', mode: 'stack', maxLevel: 5,
                 values: [1, 2, 3, 4, 5],
                 descriptions: [
-                    '每次攻击发射 1 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
-                    '每次攻击发射 2 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
-                    '每次攻击发射 3 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
-                    '每次攻击发射 4 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%',
-                    '每次攻击发射 5 枚追踪导弹，每枚造成本次武器攻击总伤害的 22%'
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 22%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 44%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 66%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 88%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 110%'
                 ]
             },
             {
@@ -1641,6 +1641,7 @@
                 this.age = 0;
                 this.homing = Boolean(options.homing) || this.model === 'missile';
                 this.homingTarget = options.homingTarget || null;
+                this.targetLock = Boolean(options.targetLock);
                 this.homingDelay = Math.max(0, options.homingDelay || 0);
                 this.homingSpeed = options.homingSpeed || 11;
                 this.turnRate = options.turnRate || 0.17;
@@ -1656,6 +1657,7 @@
 
             update() {
                 this.age++;
+                if (this.targetLock && this.age > this.homingDelay && !this.isTargetAlive(this.homingTarget)) return false;
                 this.trail.push({ x: this.x, y: this.y });
                 if (this.trail.length > (this.model === 'missile' ? 8 : 5)) this.trail.shift();
 
@@ -1696,6 +1698,7 @@
 
             acquireHomingTarget() {
                 if (this.isTargetAlive(this.homingTarget)) return this.homingTarget;
+                if (this.targetLock) return null;
                 if (this.owner === 'enemy') {
                     this.homingTarget = player;
                     return this.homingTarget;
@@ -1709,6 +1712,10 @@
                 });
                 this.homingTarget = candidates[0] || null;
                 return this.homingTarget;
+            }
+
+            canHitTarget(target) {
+                return !this.targetLock || target === this.homingTarget;
             }
 
             updateMissileGuidance() {
@@ -3566,37 +3573,34 @@
                     if (this.meleeRhythmCount % 5 === 0) this.rhythmTimer = 240;
                 }
                 if (this.hasPassive('echo_strike') && this.passiveAttackCount % 4 === 0) this.echoReady = true;
-                const missileCount = Math.round(getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage')));
-                if (missileCount > 0) this.launchMissileBarrage(missileCount);
             }
 
-            launchMissileBarrage(missileCount) {
+            launchMissileOnHit(target, baseHitDamage) {
+                const missileLevel = Math.round(getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage')));
+                if (missileLevel <= 0 || !target || target.alive === false) return false;
+                const hitDamage = Number.isFinite(baseHitDamage) ? Math.max(0, baseHitDamage) : 0;
+                if (hitDamage <= 0) return false;
                 const originX = this.x + this.width / 2;
                 const originY = this.y + 10;
-                const targets = enemies
-                    .filter(enemy => enemy.alive)
-                    .sort((a, b) => Math.abs(getWrappedDeltaX(originX, a.x + a.width / 2)) - Math.abs(getWrappedDeltaX(originX, b.x + b.width / 2)));
-                if (activeBoss?.alive) targets.push(activeBoss);
-                const missileDamage = this.getAttackEventPower() * CONFIG.MISSILE_ATTACK_COEFFICIENT;
-                runStats.projectilesFired += missileCount;
-                if (gameMode === 'endless') runStats.endlessProjectilesFired += missileCount;
-                for (let index = 0; index < missileCount; index++) {
-                    const spreadPosition = missileCount === 1 ? 0.5 : index / (missileCount - 1);
-                    const deployAngle = -Math.PI * 0.86 + spreadPosition * Math.PI * 0.72;
-                    const deployFrames = 10 + index * 2;
-                    projectiles.push(new Projectile(originX, originY, Math.cos(deployAngle) * 3.8, Math.sin(deployAngle) * 3.8,
-                        missileDamage, '#FFD54F', 'player', {
-                            size: 5, life: 180, model: 'missile', knockback: 0, knockbackFrames: 0,
-                            damageSource: 'missile', passiveDamage: true, canCrit: false, noTrigger: true,
-                            homingTarget: targets[index % Math.max(1, targets.length)] || null,
-                            homingDelay: deployFrames, ignoreTerrainFrames: 180,
-                            collisionDelay: deployFrames, homingSpeed: 12.5, turnRate: 0.18,
-                            acceleration: 0.42, launchAnchor: this, deployAngle,
-                            deployRadius: 32 + index * 3, canHitChest: false, explosiveVisual: true
-                        }));
-                }
-                spawnAttackParticles(originX, originY, '#FFD54F', 7 + missileCount * 2);
-                spawnShockwave(originX, originY, '#FFD54F', 26 + missileCount * 3, 16, 3);
+                const dualWieldMultiplier = this.hasPassive('dual_wield') ? 0.65 : 1;
+                const missileDamage = hitDamage * dualWieldMultiplier * CONFIG.MISSILE_ATTACK_COEFFICIENT * missileLevel;
+                const deployAngle = -Math.PI / 2;
+                const deployFrames = 10;
+                projectiles.push(new Projectile(originX, originY, 0, -3.8,
+                    missileDamage, '#FFD54F', 'player', {
+                        size: 5, life: 180, model: 'missile', knockback: 0, knockbackFrames: 0,
+                        damageSource: 'missile', passiveDamage: true, canCrit: false, noTrigger: true,
+                        homingTarget: target, targetLock: true,
+                        homingDelay: deployFrames, ignoreTerrainFrames: 180,
+                        collisionDelay: deployFrames, homingSpeed: 12.5, turnRate: 0.18,
+                        acceleration: 0.42, launchAnchor: this, deployAngle,
+                        deployRadius: 32, canHitChest: false, explosiveVisual: true
+                    }));
+                runStats.projectilesFired++;
+                if (gameMode === 'endless') runStats.endlessProjectilesFired++;
+                spawnAttackParticles(originX, originY, '#FFD54F', 9);
+                spawnShockwave(originX, originY, '#FFD54F', 29, 16, 3);
+                return true;
             }
 
             onDamageDealt(actualDamage, target, options = {}) {
@@ -3627,6 +3631,7 @@
                 }
                 if (options.noTrigger) return;
 
+                this.launchMissileOnHit(target, options.baseDamage);
                 this.passiveHitCount++;
                 if (this.hasPassive('chain_arc') && this.passiveHitCount % 3 === 0) {
                     const originX = target.x + target.width / 2;
@@ -4847,6 +4852,7 @@
                 this.aggro = true;
                 this.alertTimer = Math.max(this.alertTimer, 45);
 
+                const baseDamage = Math.max(0, amount);
                 const resolved = player.resolveOutgoingDamage(amount, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
@@ -4893,7 +4899,8 @@
                 player.onDamageDealt(actualDamage, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
-                    noTrigger: Boolean(options.noTrigger)
+                    noTrigger: Boolean(options.noTrigger),
+                    baseDamage
                 });
                 this.hitTimer = 10;
                 this.knockbackVx = knockbackDir * (knockbackForce / this.knockResist);
@@ -5615,6 +5622,7 @@
                 if (!this.alive) return false;
                 if (hitToken && this.lastHitToken === hitToken) return false;
                 if (hitToken) this.lastHitToken = hitToken;
+                const baseDamage = Math.max(0, amount);
                 const resolved = player.resolveOutgoingDamage(amount, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
@@ -5634,7 +5642,8 @@
                 player.onDamageDealt(actualDamage, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
-                    noTrigger: Boolean(options.noTrigger)
+                    noTrigger: Boolean(options.noTrigger),
+                    baseDamage
                 });
                 this.hitTimer = 12;
                 this.knockbackVx = Math.max(-5, Math.min(5, this.knockbackVx + knockbackDir * (knockbackForce / this.knockResist)));
@@ -8532,7 +8541,7 @@
                 if (p.owner === 'player') {
                     let consumed = false;
                     for (const enemy of enemies) {
-                        if (!enemy.alive || p.hitTargets.has(enemy)) continue;
+                        if (!enemy.alive || p.hitTargets.has(enemy) || !p.canHitTarget(enemy)) continue;
                         if (enemy.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
                             p.hitTargets.add(enemy);
                             const didHit = enemy.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames, {
@@ -8555,6 +8564,7 @@
                     }
 
                     if (!consumed && activeBoss && activeBoss.alive && !p.hitTargets.has(activeBoss) &&
+                        p.canHitTarget(activeBoss) &&
                         activeBoss.intersects(p.x, p.y, p.size * 2, p.size * 2)) {
                         p.hitTargets.add(activeBoss);
                         const didHit = activeBoss.takeDamage(p.dmg, Math.sign(p.vx) || player.facing, p.knockback, p.token, p.knockbackFrames, {
