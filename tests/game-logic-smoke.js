@@ -551,11 +551,191 @@ const assertions = `
     sleepingEnemy.update({ x: 180, y: 100, width: 24, height: 32, takeDamage() {} });
     assert(sleepingEnemy.vx > 0, '怪物进入仇恨后没有开始追逐玩家');
     camera.x = 2200;
-    const seamShooter = new Enemy(10, 100, 1, 'shooter');
+    const seamShooter = new Enemy(10, -120, 1, 'shooter');
     seamShooter.aggro = true;
-    seamShooter.update({ x: worldWidth - 20, y: 100, width: 24, height: 32, takeDamage() {} });
+    seamShooter.update({ x: worldWidth - 300, y: -120, width: 24, height: 32, takeDamage() {} });
     assert(seamShooter.vx < 0, '屏外远程怪没有先跨接缝追到可见侧');
+    const closeSeamShooter = new Enemy(10, -120, 1, 'shooter');
+    closeSeamShooter.aggro = true;
+    closeSeamShooter.shootCooldown = 9999;
+    const closeSeamPlayer = { x: worldWidth - 20, y: -120, width: 24, height: 32, takeDamage() {} };
+    closeSeamShooter.update(closeSeamPlayer);
+    assert(closeSeamShooter.vx > 0, '屏外远程怪在接缝处贴近玩家时没有向身体外后撤');
+    for (let frame = 0; frame < 160; frame++) {
+        closeSeamShooter.y = -120;
+        closeSeamShooter.vy = 0;
+        closeSeamShooter.onGround = false;
+        closeSeamShooter.update(closeSeamPlayer);
+    }
+    const closeSeamRangedDistance = Math.abs(getWrappedDeltaX(
+        closeSeamShooter.x + closeSeamShooter.width / 2,
+        closeSeamPlayer.x + closeSeamPlayer.width / 2
+    ));
+    assert(closeSeamRangedDistance >= 140 && closeSeamRangedDistance <= 220,
+        '接缝另一侧的远程怪没有恢复 140-220 的射击站位：' + closeSeamRangedDistance);
     assert(getWrappedDeltaX(10, worldWidth - 10) === -20 && getWrappedDeltaX(worldWidth - 10, 10) === 20, '环形 AI 没有选择跨接缝的最短方向');
+
+    // 近战怪与 Boss 必须停在身体外的基础攻击距离，并从该距离正常命中玩家。
+    const spacingY = -120;
+    const originalRandomForEnemySpacing = Math.random;
+    Math.random = () => 0.5;
+    camera.x = 0;
+    let spacingHits = 0;
+    const spacingPlayer = {
+        x: 600, y: spacingY, width: 24, height: 32,
+        takeDamage() { spacingHits++; }
+    };
+    const spacingZombie = new Enemy(420, spacingY, 1, 'zombie');
+    spacingZombie.aggro = true;
+    spacingZombie.skillCooldown = 9999;
+    assert(spacingZombie.attackRange === CONFIG.ENEMY_BASE_ATTACK_RANGE && spacingZombie.attackRange > 0,
+        '普通怪没有有效的基础攻击距离');
+    for (let frame = 0; frame < 180; frame++) {
+        spacingZombie.y = spacingY;
+        spacingZombie.vy = 0;
+        spacingZombie.onGround = false;
+        spacingZombie.update(spacingPlayer);
+    }
+    const meleeGap = getWrappedHorizontalEdgeGap(spacingZombie, spacingPlayer);
+    assert(!spacingZombie.intersects(spacingPlayer.x, spacingPlayer.y, spacingPlayer.width, spacingPlayer.height),
+        '普通近战怪追击后进入了玩家身体');
+    assert(Math.abs(meleeGap - spacingZombie.attackRange) <= 0.01,
+        '普通近战怪没有停在基础攻击距离');
+    assert(spacingHits > 0 && spacingZombie.contactCooldown > 0,
+        '普通近战怪停步后无法从基础攻击距离攻击玩家');
+
+    // 已经重叠的旧状态也会主动退出，而不是继续卡在玩家模型内。
+    const overlapPlayer = { x: 800, y: spacingY, width: 24, height: 32, takeDamage() {} };
+    const overlapZombie = new Enemy(804, spacingY, 1, 'zombie');
+    overlapZombie.aggro = true;
+    overlapZombie.skillCooldown = 9999;
+    for (let frame = 0; frame < 60; frame++) {
+        overlapZombie.y = spacingY;
+        overlapZombie.vy = 0;
+        overlapZombie.onGround = false;
+        overlapZombie.update(overlapPlayer);
+    }
+    assert(!overlapZombie.intersects(overlapPlayer.x, overlapPlayer.y, overlapPlayer.width, overlapPlayer.height) &&
+        getWrappedHorizontalEdgeGap(overlapZombie, overlapPlayer) >= overlapZombie.attackRange - 0.51,
+        '已经重叠的近战怪没有向外恢复攻击间隙');
+
+    // 远程怪保留原有撤退站位，贴近时也不会被通用距离规则锁在玩家体内。
+    const closeShooter = new Enemy(610, spacingY, 1, 'shooter');
+    closeShooter.aggro = true;
+    closeShooter.skillCooldown = 9999;
+    closeShooter.shootCooldown = 9999;
+    const rangedDistanceBefore = Math.abs(getWrappedDeltaX(
+        closeShooter.x + closeShooter.width / 2,
+        spacingPlayer.x + spacingPlayer.width / 2
+    ));
+    for (let frame = 0; frame < 40; frame++) {
+        closeShooter.y = spacingY;
+        closeShooter.vy = 0;
+        closeShooter.onGround = false;
+        closeShooter.update(spacingPlayer);
+    }
+    const rangedDistanceAfter = Math.abs(getWrappedDeltaX(
+        closeShooter.x + closeShooter.width / 2,
+        spacingPlayer.x + spacingPlayer.width / 2
+    ));
+    assert(rangedDistanceAfter > rangedDistanceBefore &&
+        !closeShooter.intersects(spacingPlayer.x, spacingPlayer.y, spacingPlayer.width, spacingPlayer.height),
+        '远程怪过近时没有后撤到玩家身体外');
+
+    // 左右接缝两侧也使用环形边缘距离攻击，不能退回普通 AABB 重叠判定。
+    let seamMeleeHits = 0;
+    const seamMeleePlayer = {
+        x: worldWidth - 24, y: spacingY, width: 24, height: 32,
+        takeDamage() { seamMeleeHits++; }
+    };
+    const seamMeleeEnemy = new Enemy(CONFIG.ENEMY_BASE_ATTACK_RANGE, spacingY, 1, 'zombie');
+    seamMeleeEnemy.aggro = true;
+    seamMeleeEnemy.skillCooldown = 9999;
+    seamMeleeEnemy.onGround = false;
+    const seamEnemyXBefore = seamMeleeEnemy.x;
+    assert(!seamMeleeEnemy.intersects(seamMeleePlayer.x, seamMeleePlayer.y, seamMeleePlayer.width, seamMeleePlayer.height),
+        '接缝攻击距离测试意外发生普通 AABB 重叠');
+    seamMeleeEnemy.update(seamMeleePlayer);
+    assert(Math.abs(seamMeleeEnemy.x - seamEnemyXBefore) <= 0.01 && seamMeleeHits === 1,
+        '怪物无法跨地图接缝停步并使用基础攻击距离命中玩家');
+    const seamAttackPlayer = new Player(worldWidth - 24, spacingY);
+    seamAttackPlayer.facing = 1;
+    seamAttackPlayer.attacking = true;
+    seamAttackPlayer.attackDuration = seamAttackPlayer.weapon.attackProfile.duration;
+    const seamAttackProgress = (seamAttackPlayer.weapon.attackProfile.activeStart +
+        seamAttackPlayer.weapon.attackProfile.activeEnd) / 2;
+    seamAttackPlayer.attackTimer = seamAttackPlayer.attackDuration * (1 - seamAttackProgress);
+    assert(seamAttackPlayer.attackIntersects(seamMeleeEnemy),
+        '玩家近战无法命中地图接缝另一侧、停在基础距离的怪物');
+
+    // 冲锋仍会发动，但在抵达攻击间隙时停止，不会穿过玩家中心。
+    let chargeHits = 0;
+    const chargePlayer = {
+        x: 1000, y: spacingY, width: 24, height: 32,
+        takeDamage() { chargeHits++; }
+    };
+    const activeCharger = new Enemy(0, spacingY, 7, 'charger');
+    activeCharger.x = chargePlayer.x - activeCharger.width - activeCharger.attackRange - 2;
+    activeCharger.aggro = true;
+    activeCharger.onGround = false;
+    activeCharger.skillCooldown = 9999;
+    activeCharger.facing = 1;
+    activeCharger.abilityVx = activeCharger.speed * 4.2;
+    activeCharger.abilityVxFrames = 3;
+    const chargeXBefore = activeCharger.x;
+    activeCharger.update(chargePlayer);
+    assert(activeCharger.x > chargeXBefore && activeCharger.x - chargeXBefore <= 2.01,
+        '冲锋没有在基础攻击距离处正确截停');
+    assert(!activeCharger.intersects(chargePlayer.x, chargePlayer.y, chargePlayer.width, chargePlayer.height) &&
+        getWrappedHorizontalEdgeGap(activeCharger, chargePlayer) >= activeCharger.attackRange - 0.01 &&
+        activeCharger.abilityVxFrames === 0 && chargeHits === 1,
+        '冲锋怪抵达玩家后仍进入身体、越过玩家或无法命中');
+
+    let bossSpacingHits = 0;
+    const bossSpacingPlayer = {
+        x: 1200, y: spacingY, width: 24, height: 32,
+        takeDamage() { bossSpacingHits++; }
+    };
+    const spacingBoss = createBossForWave(10, 'story');
+    spacingBoss.x = 1040;
+    spacingBoss.y = spacingY;
+    spacingBoss.skillCooldown = 9999;
+    spacingBoss.slamCooldown = 9999;
+    spacingBoss.novaCooldown = 9999;
+    spacingBoss.dashCooldown = 9999;
+    for (let frame = 0; frame < 180; frame++) {
+        spacingBoss.y = spacingY;
+        spacingBoss.vy = 0;
+        spacingBoss.update(bossSpacingPlayer);
+    }
+    assert(!spacingBoss.intersects(bossSpacingPlayer.x, bossSpacingPlayer.y, bossSpacingPlayer.width, bossSpacingPlayer.height) &&
+        Math.abs(getWrappedHorizontalEdgeGap(spacingBoss, bossSpacingPlayer) - spacingBoss.attackRange) <= 0.01,
+        'Boss 没有停在玩家身体外的基础攻击距离');
+    assert(bossSpacingHits > 0, 'Boss 到达基础攻击距离后无法命中玩家');
+
+    let bossDashHits = 0;
+    const bossDashPlayer = {
+        x: 1500, y: spacingY, width: 24, height: 32,
+        takeDamage() { bossDashHits++; }
+    };
+    const dashBoss = createBossForWave(10, 'story');
+    dashBoss.x = bossDashPlayer.x - dashBoss.width - dashBoss.attackRange - 2;
+    dashBoss.y = spacingY;
+    dashBoss.skillCooldown = 9999;
+    dashBoss.slamCooldown = 9999;
+    dashBoss.novaCooldown = 9999;
+    dashBoss.dashCooldown = 9999;
+    dashBoss.dashTimer = 3;
+    const bossDashXBefore = dashBoss.x;
+    dashBoss.update(bossDashPlayer);
+    assert(dashBoss.x > bossDashXBefore && dashBoss.x - bossDashXBefore <= 2.01 && dashBoss.dashTimer === 0,
+        'Boss 冲刺没有在基础攻击距离处截停');
+    assert(!dashBoss.intersects(bossDashPlayer.x, bossDashPlayer.y, bossDashPlayer.width, bossDashPlayer.height) &&
+        Math.abs(getWrappedHorizontalEdgeGap(dashBoss, bossDashPlayer) - dashBoss.attackRange) <= 0.01 &&
+        bossDashHits === 1,
+        'Boss 冲刺后进入玩家身体、越过玩家或无法命中');
+    Math.random = originalRandomForEnemySpacing;
+
     const leftBoundaryPlayerBullet = new Projectile(1, 100, -4, 0, 1, '#fff', 'player', { gravity: 0, damageSource: 'weapon' });
     assert(!leftBoundaryPlayerBullet.update() && leftBoundaryPlayerBullet.x === -3, '玩家子弹越过地图左边界后仍然传送');
     const rightBoundaryPlayerBullet = new Projectile(worldWidth - 1, 100, 4, 0, 1, '#fff', 'player', { gravity: 0, damageSource: 'weapon' });
@@ -685,6 +865,15 @@ const assertions = `
     offscreenPrism.laserCooldown = 0;
     offscreenPrism.updateLaser(player, player.x - offscreenPrism.x);
     assert(offscreenPrism.laserCharge === 0, '屏外激光精英仍能开始蓄力');
+    camera.x = 2200;
+    player.x = worldWidth - 100;
+    const seamPrism = new Enemy(10, 200, 5, 'prism');
+    seamPrism.laserCooldown = 0;
+    const seamPrismDx = getWrappedDeltaX(seamPrism.x + seamPrism.width / 2, player.x + player.width / 2);
+    seamPrism.updateLaser(player, seamPrismDx);
+    assert(seamPrism.laserCharge === CONFIG.LASER_CHARGE_FRAMES,
+        '接缝另一侧画面内的激光精英仍被误判为屏外');
+    camera.x = 0;
     player.x = previousPlayerX;
 
     // 主线第 10 波通关后进入无尽奖励，选择后从第 11 波开始；第 20 波仍为 Boss。

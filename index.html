@@ -724,6 +724,9 @@
             ENEMY_GLOBAL_HP_MULTIPLIER: 1.15,
             ENEMY_GLOBAL_DAMAGE_MULTIPLIER: 1.12,
             ENEMY_GLOBAL_SPEED_MULTIPLIER: 1.04,
+            // 怪物会在身体外保留这段基础攻击间隙，不再靠重叠玩家造成伤害。
+            ENEMY_BASE_ATTACK_RANGE: 12,
+            ENEMY_ATTACK_VERTICAL_TOLERANCE: 8,
             LASER_CHARGE_FRAMES: 72,
             LASER_FIRE_FRAMES: 14
         };
@@ -2771,6 +2774,43 @@
             return delta;
         }
 
+        function getWrappedHorizontalEdgeGap(first, second) {
+            if (!first || !second) return Infinity;
+            const centerDistance = Math.abs(getWrappedDeltaX(
+                first.x + first.width / 2,
+                second.x + second.width / 2
+            ));
+            return Math.max(0, centerDistance - (first.width + second.width) / 2);
+        }
+
+        function getVerticalEdgeGap(first, second, firstOffsetY = 0) {
+            if (!first || !second) return Infinity;
+            const firstTop = first.y + firstOffsetY;
+            const firstBottom = firstTop + first.height;
+            const secondTop = second.y;
+            const secondBottom = second.y + second.height;
+            return Math.max(0, firstTop - secondBottom, secondTop - firstBottom);
+        }
+
+        function getAttackStopCenterDistance(attacker, target, attackRange) {
+            return (attacker.width + target.width) / 2 + Math.max(0, attackRange || 0);
+        }
+
+        function isWithinWrappedAttackRange(attacker, target, attackRange) {
+            return getWrappedHorizontalEdgeGap(attacker, target) <= attackRange + 0.001 &&
+                getVerticalEdgeGap(attacker, target) <= CONFIG.ENEMY_ATTACK_VERTICAL_TOLERANCE;
+        }
+
+        function clampWrappedApproachVelocity(attacker, target, dx, stopCenterDistance, predictedYStep = 0) {
+            const sameLevelNow = getVerticalEdgeGap(attacker, target) <= CONFIG.ENEMY_ATTACK_VERTICAL_TOLERANCE;
+            const sameLevelNext = getVerticalEdgeGap(attacker, target, predictedYStep) <= CONFIG.ENEMY_ATTACK_VERTICAL_TOLERANCE;
+            if ((!sameLevelNow && !sameLevelNext) || attacker.vx * dx <= 0) return false;
+            const allowedStep = Math.max(0, Math.abs(dx) - stopCenterDistance);
+            if (Math.abs(attacker.vx) <= allowedStep) return false;
+            attacker.vx = Math.sign(attacker.vx) * allowedStep;
+            return true;
+        }
+
         function wrapWorldX(x) {
             const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
             return ((x % worldWidth) + worldWidth) % worldWidth;
@@ -3845,12 +3885,19 @@
             attackIntersects(target) {
                 const attackBox = this.getAttackBox();
                 if (!attackBox || !target) return false;
-                if (this.weapon.attackProfile.hitShape !== 'radial') {
-                    return target.intersects(attackBox.x, attackBox.y, attackBox.width, attackBox.height);
-                }
                 const centerX = this.x + this.width / 2;
+                const wrappedTargetX = centerX + getWrappedDeltaX(
+                    centerX,
+                    target.x + target.width / 2
+                ) - target.width / 2;
+                if (this.weapon.attackProfile.hitShape !== 'radial') {
+                    return wrappedTargetX < attackBox.x + attackBox.width &&
+                        wrappedTargetX + target.width > attackBox.x &&
+                        target.y < attackBox.y + attackBox.height &&
+                        target.y + target.height > attackBox.y;
+                }
                 const centerY = this.y + this.height / 2;
-                const nearestX = Math.max(target.x, Math.min(centerX, target.x + target.width));
+                const nearestX = Math.max(wrappedTargetX, Math.min(centerX, wrappedTargetX + target.width));
                 const nearestY = Math.max(target.y, Math.min(centerY, target.y + target.height));
                 const dx = nearestX - centerX;
                 const dy = nearestY - centerY;
@@ -4474,6 +4521,7 @@
                 this.laser = t.laser || false;
                 this.leaper = t.leaper || false;
                 this.isEliteType = t.elite || false;
+                this.attackRange = Math.max(CONFIG.ENEMY_BASE_ATTACK_RANGE, t.attackRange || 0);
                 this.alive = true;
                 this.facing = -1;
                 this.hitTimer = 0;
@@ -4542,14 +4590,20 @@
                 const playerCenterX = player.x + player.width / 2;
                 const dx = getWrappedDeltaX(enemyCenterX, playerCenterX);
                 const dy = (player.y + player.height / 2) - (this.y + this.height / 2);
-                const isNearViewport = this.x + this.width >= camera.x - 80 &&
-                    this.x <= camera.x + CONFIG.CANVAS_WIDTH + 80;
+                const attackStopDistance = getAttackStopCenterDistance(this, player, this.attackRange);
+                const sharesAttackLevel = getVerticalEdgeGap(this, player) <= CONFIG.ENEMY_ATTACK_VERTICAL_TOLERANCE;
+                const enemyScreenCenterX = getNearestWrappedScreenX(enemyCenterX);
+                const isNearViewport = enemyScreenCenterX + this.width / 2 >= -80 &&
+                    enemyScreenCenterX - this.width / 2 <= CONFIG.CANVAS_WIDTH + 80;
                 if (!this.aggro && Math.abs(dx) <= this.noticeRange && Math.abs(dy) <= 230) {
                     this.aggro = true;
                     this.alertTimer = 45;
                 }
                 if (this.alertTimer > 0) this.alertTimer--;
-                if (this.aggro && this.onGround && Math.abs(dx) > 24) {
+                const needsHorizontalApproach = sharesAttackLevel
+                    ? Math.abs(dx) > attackStopDistance
+                    : Math.abs(dx) > 24;
+                if (this.aggro && this.onGround && needsHorizontalApproach) {
                     const direction = Math.sign(dx) || this.facing;
                     const frontTx = Math.floor((this.x + (direction > 0 ? this.width + 4 : -4)) / CONFIG.TILE_SIZE);
                     const footTy = Math.floor((this.y + this.height - 3) / CONFIG.TILE_SIZE);
@@ -4561,21 +4615,32 @@
                 const laserLocked = this.aggro && this.laser ? this.updateLaser(player, dx) : false;
                 let desiredVx = 0;
                 if (laserLocked) {
-                    desiredVx = 0;
+                    if (sharesAttackLevel && Math.abs(dx) < attackStopDistance - 0.5) {
+                        desiredVx = dx >= 0 ? -this.speed : this.speed;
+                    }
                 } else if (this.aggro && (this.ranged || this.laser)) {
-                    if (!isNearViewport) {
+                    // 近距撤退优先于视野判断，避免接缝另一侧的远程怪被“屏外追击”锁在玩家身边。
+                    if (Math.abs(dx) < 140) {
+                        desiredVx = dx >= 0 ? -this.speed : this.speed;
+                        this.facing = Math.sign(dx) || this.facing;
+                    } else if (!isNearViewport) {
                         desiredVx = dx > 0 ? this.speed : -this.speed;
                         this.facing = dx > 0 ? 1 : -1;
                     } else if (Math.abs(dx) > 220) {
                         desiredVx = dx > 0 ? this.speed : -this.speed;
                         this.facing = dx > 0 ? 1 : -1;
-                    } else if (Math.abs(dx) < 140) {
-                        desiredVx = dx > 0 ? -this.speed : this.speed;
                     }
                 } else if (this.aggro) {
-                    if (Math.abs(dx) > 12) {
+                    if ((!sharesAttackLevel && Math.abs(dx) > 12) ||
+                        (sharesAttackLevel && Math.abs(dx) > attackStopDistance)) {
                         desiredVx = dx > 0 ? this.speed : -this.speed;
                         this.facing = dx > 0 ? 1 : -1;
+                    } else if (sharesAttackLevel) {
+                        this.facing = Math.sign(dx) || this.facing;
+                        // 玩家主动贴近或旧状态已经重叠时，怪物会向外恢复基础攻击间隙。
+                        if (Math.abs(dx) < attackStopDistance - 0.5) {
+                            desiredVx = dx >= 0 ? -this.speed : this.speed;
+                        }
                     }
                 }
                 if (this.slowTimer > 0) desiredVx *= Math.max(0.35, 1 - this.slowRatio);
@@ -4655,7 +4720,8 @@
                     }
                 }
 
-                if (this.knockbackTimer > 0) {
+                const preservingKnockback = this.knockbackTimer > 0;
+                if (preservingKnockback) {
                     this.vx = this.knockbackVx;
                     this.knockbackVx *= 0.84;
                     this.knockbackTimer--;
@@ -4716,6 +4782,12 @@
                 this.vy += CONFIG.GRAVITY;
                 if (this.vy > 15) this.vy = 15;
 
+                // 普通追击、冲锋与扑击都只能抵达攻击间隙，不能穿入或越过玩家身体；受击击退不受限制。
+                if (!preservingKnockback && clampWrappedApproachVelocity(this, player, dx, attackStopDistance, this.vy)) {
+                    this.abilityVxFrames = 0;
+                    this.leapBoostFrames = 0;
+                }
+
                 // 应用速度
                 this.x += this.vx;
                 this.y += this.vy;
@@ -4761,9 +4833,10 @@
                     }
                 }
 
-                // 与玩家碰撞检测
-                if (this.contactCooldown <= 0 && this.intersects(player.x, player.y, player.width, player.height)) {
+                // 基础近战按身体边缘距离命中，不再要求怪物与玩家矩形重叠。
+                if (this.contactCooldown <= 0 && isWithinWrappedAttackRange(this, player, this.attackRange)) {
                     this.aggro = true;
+                    this.facing = Math.sign(getWrappedDeltaX(this.x + this.width / 2, player.x + player.width / 2)) || this.facing;
                     this.contactCooldown = this.skill === 'mimicBite' ? 42 : 54;
                     this.attackAnimTimer = Math.max(this.attackAnimTimer, 20);
                     this.attackAnimMax = Math.max(this.attackAnimMax, this.attackAnimTimer);
@@ -4803,8 +4876,9 @@
                 }
 
                 this.laserCooldown--;
-                const isNearViewport = this.x + this.width >= camera.x - 80 &&
-                    this.x <= camera.x + CONFIG.CANVAS_WIDTH + 80;
+                const screenCenterX = getNearestWrappedScreenX(this.x + this.width / 2);
+                const isNearViewport = screenCenterX + this.width / 2 >= -80 &&
+                    screenCenterX - this.width / 2 <= CONFIG.CANVAS_WIDTH + 80;
                 if (this.laserCooldown <= 0 && Math.abs(dx) <= 520 && isNearViewport) {
                     this.laserCooldown = Math.max(105, 205 - currentWave * 2);
                     this.laserCharge = CONFIG.LASER_CHARGE_FRAMES;
@@ -5315,6 +5389,7 @@
                 this.y = 100;
                 this.width = 72;
                 this.height = 96;
+                this.attackRange = CONFIG.ENEMY_BASE_ATTACK_RANGE;
                 this.vx = 0;
                 this.vy = 0;
                 this.facing = -1;
@@ -5349,6 +5424,8 @@
             update(player) {
                 if (!this.alive || gameState !== 'playing') return;
                 const dx = getWrappedDeltaX(this.x + this.width / 2, player.x + player.width / 2);
+                const attackStopDistance = getAttackStopCenterDistance(this, player, this.attackRange);
+                const sharesAttackLevel = getVerticalEdgeGap(this, player) <= CONFIG.ENEMY_ATTACK_VERTICAL_TOLERANCE;
                 this.facing = dx >= 0 ? 1 : -1;
                 if (this.slowTimer > 0) this.slowTimer--;
                 else this.slowRatio = 0;
@@ -5364,14 +5441,18 @@
                         spawnAttackParticles(this.x + this.width / 2, this.y + this.height / 2, this.archetype.aura, 6);
                     }
                 } else {
-                    if (Math.abs(dx) > 40) {
+                    if ((!sharesAttackLevel && Math.abs(dx) > 40) ||
+                        (sharesAttackLevel && Math.abs(dx) > attackStopDistance)) {
                         this.vx = (dx > 0 ? this.archetype.moveSpeed : -this.archetype.moveSpeed) * Math.max(0.55, 1 - this.slowRatio);
+                    } else if (sharesAttackLevel && Math.abs(dx) < attackStopDistance - 0.5) {
+                        this.vx = (dx >= 0 ? -this.archetype.moveSpeed : this.archetype.moveSpeed) * Math.max(0.55, 1 - this.slowRatio);
                     } else {
                         this.vx = 0;
                     }
                 }
 
-                if (this.knockbackTimer > 0 && this.dashTimer <= 0) {
+                const preservingKnockback = this.knockbackTimer > 0 && this.dashTimer <= 0;
+                if (preservingKnockback) {
                     this.vx = this.knockbackVx;
                     this.knockbackVx *= 0.84;
                     this.knockbackTimer--;
@@ -5417,6 +5498,10 @@
                 this.vy += CONFIG.GRAVITY;
                 if (this.vy > 14) this.vy = 14;
 
+                if (!preservingKnockback && clampWrappedApproachVelocity(this, player, dx, attackStopDistance, this.vy)) {
+                    this.dashTimer = 0;
+                }
+
                 // 应用速度
                 this.x += this.vx;
                 this.y += this.vy;
@@ -5433,8 +5518,8 @@
                     this.y = Math.min(this.y, findGroundYAt(this.width / 2, this.height) - 2);
                 }
 
-                // 碰撞玩家
-                if (this.intersects(player.x, player.y, player.width, player.height)) {
+                // Boss 同样在身体外的基础攻击距离命中，避免体型较大时压进玩家模型。
+                if (isWithinWrappedAttackRange(this, player, this.attackRange)) {
                     player.takeDamage(this.damage, 'boss-contact');
                 }
 
