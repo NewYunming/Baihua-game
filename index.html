@@ -718,7 +718,7 @@
             BOW_DAMAGE_MULTIPLIER: 2,
             RANGED_FRAGMENT_EFFICIENCY: 0.66,
             // 被动技能直接吃玩家当前面板攻击力，保证武器与碎片成长会同步放大技能。
-            MISSILE_ATTACK_COEFFICIENT: 0.22,
+            MISSILE_MAX_ATTACK_COEFFICIENT: 0.60,
             PRESSURE_ATTACK_COEFFICIENT: 0.12,
             // 在不回到后期血量海绵的前提下，小幅提高怪物基础威胁。
             ENEMY_GLOBAL_HP_MULTIPLIER: 1.15,
@@ -1113,13 +1113,13 @@
             },
             {
                 id: 'missile_barrage', icon: 'missile-fan', name: '白桦弹幕', tier: 'GOLD', mode: 'stack', maxLevel: 5,
-                values: [1, 2, 3, 4, 5],
+                values: [0.20, 0.30, 0.40, 0.50, 0.60],
                 descriptions: [
-                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 22%',
-                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 44%',
-                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 66%',
-                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 88%',
-                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次命中基础伤害的 110%'
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次攻击伤害的 20%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次攻击伤害的 30%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次攻击伤害的 40%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次攻击伤害的 50%',
+                    '武器实际命中敌人后，锁定该目标发射 1 枚追踪导弹，造成该次攻击伤害的 60%'
                 ]
             },
             {
@@ -1680,6 +1680,11 @@
                     enforceParticleBudget();
                 }
                 const worldWidth = MAP_WIDTH * CONFIG.TILE_SIZE;
+                const crossedHorizontalBoundary = this.x < 0 || this.x >= worldWidth;
+                // 普通玩家弹丸止于地图边界；飞弹与技能投射物仍跟随环形地图锁定目标。
+                if (crossedHorizontalBoundary && this.owner === 'player' && this.damageSource === 'weapon') {
+                    return false;
+                }
                 if (this.x < 0) {
                     this.x += worldWidth;
                     this.trail.length = 0;
@@ -3159,6 +3164,8 @@
             }
 
             resolveOutgoingDamage(baseDamage, target, options = {}) {
+                // 飞弹伤害已在武器命中时结算并封顶，命中后不得再次吃增伤或珠光暴击。
+                if (options.source === 'missile') return { damage: Math.max(0, baseDamage), critical: false };
                 let damage = Math.max(0, baseDamage) * (options.preResolved ? 1 : this.getPassiveDamageMultiplier(target));
                 if (this.hasPassive('dual_wield') && options.source === 'weapon') damage *= 0.65;
                 if (this.hasPassive('patient_strike') && this.patientStrikeArmed && options.source === 'weapon') {
@@ -3575,15 +3582,17 @@
                 if (this.hasPassive('echo_strike') && this.passiveAttackCount % 4 === 0) this.echoReady = true;
             }
 
-            launchMissileOnHit(target, baseHitDamage) {
-                const missileLevel = Math.round(getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage')));
-                if (missileLevel <= 0 || !target || target.alive === false) return false;
-                const hitDamage = Number.isFinite(baseHitDamage) ? Math.max(0, baseHitDamage) : 0;
+            launchMissileOnHit(target, resolvedHitDamage) {
+                const missileRatio = Math.min(
+                    CONFIG.MISSILE_MAX_ATTACK_COEFFICIENT,
+                    getPassiveValue('missile_barrage', this.getPassiveLevel('missile_barrage'))
+                );
+                if (missileRatio <= 0 || !target || target.alive === false) return false;
+                const hitDamage = Number.isFinite(resolvedHitDamage) ? Math.max(0, resolvedHitDamage) : 0;
                 if (hitDamage <= 0) return false;
                 const originX = this.x + this.width / 2;
                 const originY = this.y + 10;
-                const dualWieldMultiplier = this.hasPassive('dual_wield') ? 0.65 : 1;
-                const missileDamage = hitDamage * dualWieldMultiplier * CONFIG.MISSILE_ATTACK_COEFFICIENT * missileLevel;
+                const missileDamage = hitDamage * missileRatio;
                 const deployAngle = -Math.PI / 2;
                 const deployFrames = 10;
                 projectiles.push(new Projectile(originX, originY, 0, -3.8,
@@ -3631,7 +3640,7 @@
                 }
                 if (options.noTrigger) return;
 
-                this.launchMissileOnHit(target, options.baseDamage);
+                this.launchMissileOnHit(target, options.resolvedDamage);
                 this.passiveHitCount++;
                 if (this.hasPassive('chain_arc') && this.passiveHitCount % 3 === 0) {
                     const originX = target.x + target.width / 2;
@@ -4852,7 +4861,6 @@
                 this.aggro = true;
                 this.alertTimer = Math.max(this.alertTimer, 45);
 
-                const baseDamage = Math.max(0, amount);
                 const resolved = player.resolveOutgoingDamage(amount, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
@@ -4866,7 +4874,10 @@
                 const shieldBefore = this.shield;
                 let remainingDamage = amount;
                 if (this.shield > 0) {
-                    const wedge = getPassiveValue('shield_wedge', player.getPassiveLevel('shield_wedge'));
+                    // 飞弹伤害已经按触发攻击封顶，不能再由破盾楔突破单枚 60% 上限。
+                    const wedge = options.source === 'missile'
+                        ? 0
+                        : getPassiveValue('shield_wedge', player.getPassiveLevel('shield_wedge'));
                     if (wedge > 0) {
                         const bonusShieldDamage = Math.min(this.shield, amount * wedge);
                         this.shield -= bonusShieldDamage;
@@ -4900,7 +4911,7 @@
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
                     noTrigger: Boolean(options.noTrigger),
-                    baseDamage
+                    resolvedDamage: amount
                 });
                 this.hitTimer = 10;
                 this.knockbackVx = knockbackDir * (knockbackForce / this.knockResist);
@@ -5622,7 +5633,6 @@
                 if (!this.alive) return false;
                 if (hitToken && this.lastHitToken === hitToken) return false;
                 if (hitToken) this.lastHitToken = hitToken;
-                const baseDamage = Math.max(0, amount);
                 const resolved = player.resolveOutgoingDamage(amount, this, {
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
@@ -5643,7 +5653,7 @@
                     source: options.source || 'weapon',
                     passiveDamage: Boolean(options.passiveDamage),
                     noTrigger: Boolean(options.noTrigger),
-                    baseDamage
+                    resolvedDamage: amount
                 });
                 this.hitTimer = 12;
                 this.knockbackVx = Math.max(-5, Math.min(5, this.knockbackVx + knockbackDir * (knockbackForce / this.knockResist)));

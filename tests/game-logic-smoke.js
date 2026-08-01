@@ -556,6 +556,12 @@ const assertions = `
     seamShooter.update({ x: worldWidth - 20, y: 100, width: 24, height: 32, takeDamage() {} });
     assert(seamShooter.vx < 0, '屏外远程怪没有先跨接缝追到可见侧');
     assert(getWrappedDeltaX(10, worldWidth - 10) === -20 && getWrappedDeltaX(worldWidth - 10, 10) === 20, '环形 AI 没有选择跨接缝的最短方向');
+    const leftBoundaryPlayerBullet = new Projectile(1, 100, -4, 0, 1, '#fff', 'player', { gravity: 0, damageSource: 'weapon' });
+    assert(!leftBoundaryPlayerBullet.update() && leftBoundaryPlayerBullet.x === -3, '玩家子弹越过地图左边界后仍然传送');
+    const rightBoundaryPlayerBullet = new Projectile(worldWidth - 1, 100, 4, 0, 1, '#fff', 'player', { gravity: 0, damageSource: 'weapon' });
+    assert(!rightBoundaryPlayerBullet.update() && rightBoundaryPlayerBullet.x === worldWidth + 3, '玩家子弹越过地图右边界后仍然传送');
+    const wrappedPlayerMissile = new Projectile(1, 100, -4, 0, 1, '#fff', 'player', { gravity: 0, damageSource: 'missile' });
+    assert(wrappedPlayerMissile.update() && wrappedPlayerMissile.x === worldWidth - 3, '特殊飞弹被普通子弹的边界规则误删');
     const wrappedProjectile = new Projectile(1, 100, -4, 0, 1, '#fff', 'enemy', { gravity: 0 });
     wrappedProjectile.update();
     assert(wrappedProjectile.x === worldWidth - 3 && wrappedProjectile.life > 0, '跨接缝的敌方投射物没有从另一侧继续飞行');
@@ -899,7 +905,9 @@ const assertions = `
     player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
     player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
-    assert(CONFIG.MISSILE_ATTACK_COEFFICIENT === 0.22 && CONFIG.PRESSURE_ATTACK_COEFFICIENT === 0.12, '飞弹或高压锅攻击系数不是 22%/12%');
+    assert(CONFIG.MISSILE_MAX_ATTACK_COEFFICIENT === 0.60 && CONFIG.PRESSURE_ATTACK_COEFFICIENT === 0.12, '飞弹上限或高压锅攻击系数错误');
+    assert(JSON.stringify(PASSIVE_BY_ID.missile_barrage.values) === JSON.stringify([0.20, 0.30, 0.40, 0.50, 0.60]), '飞弹五级伤害比例不是 20%/30%/40%/50%/60%');
+    assert(Math.max(...PASSIVE_BY_ID.missile_barrage.values) <= CONFIG.MISSILE_MAX_ATTACK_COEFFICIENT, '飞弹等级数据突破单枚伤害上限');
     assert(PASSIVE_BY_ID.missile_barrage.descriptions.every(description => description.includes('实际命中') && description.includes('1 枚')), '飞弹描述没有明确实际命中与单枚规则');
     const missileTarget = new Enemy(player.x + 160, player.y, 1, 'tank');
     enemies = [missileTarget];
@@ -908,7 +916,7 @@ const assertions = `
     gameMode = 'story';
     runStats = createRunStats('story');
     const meleeHitDamage = player.getAttackDamage();
-    const expectedMissileDamage = meleeHitDamage * CONFIG.MISSILE_ATTACK_COEFFICIENT * 2;
+    const expectedMissileDamage = meleeHitDamage * getPassiveValue('missile_barrage', 2);
     player.tryAttack();
     assert(projectiles.length === 0 && runStats.projectilesFired === 0, '近战仅出手或未命中时提前发射了飞弹');
     missileTarget.takeDamage(meleeHitDamage, player.facing, player.getAttackKnockback(), 'missile-melee-hit', 9, { source: 'weapon' });
@@ -916,7 +924,7 @@ const assertions = `
     const missileDecoy = new Enemy(player.x + 80, player.y, 1, 'tank');
     assert(projectiles[0].homingTarget === missileTarget && projectiles[0].targetLock, '近战命中飞弹没有锁定被命中的敌人');
     assert(projectiles[0].canHitTarget(missileTarget) && !projectiles[0].canHitTarget(missileDecoy), '锁定飞弹仍可命中路径上的其他敌人');
-    assert(Math.abs(projectiles[0].dmg - expectedMissileDamage) < 1e-9, '二级飞弹没有把单枚伤害提高至命中基础伤害的 44%');
+    assert(Math.abs(projectiles[0].dmg - expectedMissileDamage) < 1e-9, '二级飞弹没有把单枚伤害设为该次攻击的 30%');
     assert(runStats.meleeAttacks === 1 && runStats.projectilesFired === 1, '近战命中后的单枚飞弹统计错误');
     const guidedMissile = projectiles[0];
     assert(!guidedMissile.canCollide() && guidedMissile.ignoresTerrain(), '飞弹部署阶段可以提前碰撞或被地形截断');
@@ -935,7 +943,7 @@ const assertions = `
         weaponProjectile.token, weaponProjectile.knockbackFrames, { source: weaponProjectile.damageSource });
     const rangedMissiles = projectiles.filter(projectile => projectile.damageSource === 'missile');
     assert(rangedMissiles.length === 1 && rangedMissiles[0].homingTarget === missileTarget, '子弹命中没有只向该目标发射一枚飞弹');
-    assert(Math.abs(rangedMissiles[0].dmg - weaponProjectile.dmg * CONFIG.MISSILE_ATTACK_COEFFICIENT * 2) < 1e-9, '子弹命中飞弹没有按单次命中基础伤害升级');
+    assert(Math.abs(rangedMissiles[0].dmg - weaponProjectile.dmg * getPassiveValue('missile_barrage', 2)) < 1e-9, '子弹命中飞弹没有按单次攻击伤害升级');
     const projectileCountBeforeMissileDamage = projectiles.length;
     missileTarget.takeDamage(rangedMissiles[0].dmg, 0, 0, rangedMissiles[0].token, 0, {
         source: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
@@ -959,6 +967,52 @@ const assertions = `
     lethalMissileTarget.hp = 1;
     lethalMissileTarget.takeDamage(10, 1, 0, 'missile-lethal-hit', 0, { source: 'weapon' });
     assert(!lethalMissileTarget.alive && projectiles.length === 0, '致命一击仍向已经死亡的目标发射无效飞弹');
+
+    // 满级飞弹在双持与珠光暴击环境中也必须严格封顶为触发攻击伤害的 60%。
+    player.resetProgression();
+    player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
+    for (let level = 0; level < 5; level++) player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.dual_wield);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.jeweled_arms);
+    player.addOrUpgradePassive(PASSIVE_BY_ID.keen_edge);
+    const cappedMissileTarget = new Enemy(player.x + 80, player.y, 1, 'tank');
+    enemies = [cappedMissileTarget];
+    projectiles.length = 0;
+    const originalRandomForMissileCap = Math.random;
+    Math.random = () => 0.99;
+    const cappedWeaponHpBefore = cappedMissileTarget.hp;
+    cappedMissileTarget.takeDamage(player.getAttackDamage(), 1, 0, 'missile-cap-weapon', 0, { source: 'weapon' });
+    const cappedWeaponDamage = cappedWeaponHpBefore - cappedMissileTarget.hp;
+    const cappedMissile = projectiles.find(projectile => projectile.damageSource === 'missile');
+    assert(cappedMissile && Math.abs(cappedMissile.dmg - cappedWeaponDamage * 0.60) < 1e-9, '满级单枚飞弹生成伤害超过触发攻击的 60%');
+    const cappedMissileHpBefore = cappedMissileTarget.hp;
+    Math.random = () => 0;
+    cappedMissileTarget.takeDamage(cappedMissile.dmg, 0, 0, cappedMissile.token, 0, {
+        source: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
+    });
+    Math.random = originalRandomForMissileCap;
+    const cappedMissileDamage = cappedMissileHpBefore - cappedMissileTarget.hp;
+    assert(!Number.isNaN(cappedMissileDamage) && cappedMissileDamage <= cappedWeaponDamage * 0.60 + 1e-9,
+        '飞弹命中后再次获得被动增伤或珠光暴击，突破单枚 60% 上限');
+
+    player.resetProgression();
+    player.setWeapon(new Weapon(WEAPON_DATABASE.COMMON.find(item => item.model === 'sword'), 'COMMON'));
+    for (let level = 0; level < 5; level++) player.addOrUpgradePassive(PASSIVE_BY_ID.missile_barrage);
+    for (let level = 0; level < 5; level++) player.addOrUpgradePassive(PASSIVE_BY_ID.shield_wedge);
+    const cappedShieldTarget = new Enemy(player.x + 80, player.y, 1, 'warden');
+    enemies = [cappedShieldTarget];
+    projectiles.length = 0;
+    const shieldTriggerDamage = player.getAttackDamage();
+    cappedShieldTarget.takeDamage(shieldTriggerDamage, 1, 0, 'missile-cap-shield-trigger', 0, { source: 'weapon', canCrit: false });
+    const shieldCapMissile = projectiles.find(projectile => projectile.damageSource === 'missile');
+    assert(shieldCapMissile, '带护盾目标受到攻击后未生成飞弹');
+    const shieldBeforeMissile = cappedShieldTarget.shield;
+    cappedShieldTarget.takeDamage(shieldCapMissile.dmg, 0, 0, shieldCapMissile.token, 0, {
+        source: 'missile', passiveDamage: true, canCrit: false, noTrigger: true
+    });
+    const missileShieldDamage = shieldBeforeMissile - cappedShieldTarget.shield;
+    assert(missileShieldDamage <= shieldTriggerDamage * 0.60 + 1e-9,
+        '破盾楔让满级单枚飞弹的实际破盾伤害突破攻击的 60%');
 
     // 用户指定的吸血数值，以及击杀/移动/灼烧任务进度都必须真实生效。
     player.resetProgression();
