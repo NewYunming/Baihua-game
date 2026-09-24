@@ -1,6 +1,6 @@
 # 白桦大冒险
 
-一个基于 HTML5 Canvas 的像素风横版动作/肉鸽游戏，支持键鼠与触屏模式，无第三方运行依赖。
+一个基于 HTML5 Canvas 的像素风横版动作/肉鸽游戏，支持键鼠与触屏模式，单机玩法可直接运行；账号、排行榜和好友对决需要网站服务端。
 
 ## 当前内容
 
@@ -19,8 +19,8 @@
 - **画面反馈**：群系远景、天气、角色阴影、枪口焰、弹壳、分层烟尘、发光斩击、能量束、落地冲击、盾击/破盾、伤害数字和震屏均已强化。追踪导弹会先在玩家周围展开再自动锁敌；落雷、陨星与虚空裂隙拥有可见预警，并正确显示在环形地图边界。低动态偏好仍受支持。
 
 ## 游玩方式
-- 本地：双击 index.html 直接在浏览器打开。
-- 线上（GitHub Pages）：推送到 GitHub 后，在仓库 Settings → Pages 启用，链接形如 `https://<你的用户名>.github.io/Baihua-game/`。
+- 本地单机：双击 `index.html`。账号、排行榜和好友对决需通过网站服务端运行。
+- 完整网站：使用 `website/` 中的 Cloudflare Worker、D1 与 R2 项目；见 [DEPLOYMENT.md](DEPLOYMENT.md)。GitHub Pages 仅能托管单机页面。
 
 ## 控制
 - 键鼠：A/D 移动，空格跳跃，J/鼠标左键攻击，R 手动装填，U 求饶回血（约每秒+7HP），P 查看被动详情，Esc 打开或关闭暂停菜单。
@@ -41,5 +41,9 @@
 7. `git push -u origin main`
 8. 仓库 Settings → Pages，Source 选 “Deploy from a branch”，Branch 选 main，Folder 选 /(root)，保存。
 
+## 网站功能与维护
+
+当前游戏首页并列显示模式选择、账号、排行榜、好友和好友对决。死亡结算时自动记录个人最佳成绩；暂停菜单也能进入网站功能。`index.html` 和 `social.js` 是客户端源文件；运行 `cd website` 后的 `npm run dev` 或 `npm run build` 会自动同步到 `website/public/`。完整部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 ## 版权说明
-自用项目，无第三方依赖。
+自用项目。单机版无需第三方运行依赖；网站端依赖见 `website/package.json`。

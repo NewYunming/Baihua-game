@@ -3,3 +3,10 @@ node_modules/
 dist/
 .playwright-cli/
 output/playwright/
+
+# Website build and local runtime
+website/.next/
+website/.vinext/
+website/.wrangler/
+website/.sites-runtime/
+website/tsconfig.tsbuildinfo

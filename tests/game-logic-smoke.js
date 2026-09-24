@@ -124,7 +124,8 @@ const elements = {
     touchSizeSlider,
     touchSizeValue: makeElement(),
     rotateHint: makeElement(),
-    liveStatus: makeElement()
+    liveStatus: makeElement(),
+    socialHub: Object.assign(makeElement(), { hidden: true })
 };
 
 const documentMock = {
@@ -132,6 +133,7 @@ const documentMock = {
     fullscreenElement: null,
     fullscreenEnabled: true,
     documentElement,
+    querySelectorAll() { return []; },
     getElementById(id) { return elements[id]; },
     addEventListener: documentEvents.addEventListener,
     dispatchEvent: documentEvents.dispatchEvent
