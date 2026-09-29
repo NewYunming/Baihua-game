@@ -1,6 +1,8 @@
 // Ported from website/app/api/route.ts (Cloudflare D1) to the Sites PostgREST
 // adapter: no FKs or SQL window functions here, so best-per-player rankings and
 // the optimistic match write are resolved in application code.
+import PVP from './pvp-sim.mjs';
+
 const json = (body, status = 200, headers = {}) => Response.json(body, {
   status,
   headers: { 'cache-control': 'no-store', ...headers },
@@ -103,53 +105,43 @@ async function bumpAttempt(db, key, windowMs) {
   }, { onConflict: 'key' }).select('key'));
 }
 
-const WEAPONS = [
-  { name: '木剑', damage: 14, reach: 74, cooldown: 550, color: '#bed8d5' },
-  { name: '猎户短矛', damage: 12, reach: 108, cooldown: 620, color: '#b8e2a3' },
-  { name: '精铁长剑', damage: 16, reach: 82, cooldown: 600, color: '#c6d8ef' },
-  { name: '风暴战斧', damage: 21, reach: 70, cooldown: 820, color: '#86c8ef' },
-  { name: '暗影裂刃', damage: 18, reach: 88, cooldown: 630, color: '#bd9aef' },
-  { name: '星火链刃', damage: 13, reach: 116, cooldown: 730, color: '#f3b078' },
-  { name: '雷神之锤', damage: 24, reach: 76, cooldown: 880, color: '#ffe06c' },
-  { name: '天穹贯日枪', damage: 17, reach: 120, cooldown: 730, color: '#80e4ea' },
-];
-const TALENTS = [
-  { name: '锋锐校准', damage: 4, speed: 0, guard: 0 },
-  { name: '轻盈步法', damage: 0, speed: 0.8, guard: 0 },
-  { name: '坚韧护甲', damage: 0, speed: 0, guard: 3 },
-  { name: '迅捷出手', damage: 2, speed: 0.35, guard: 0 },
-];
+const DISCONNECT_MS = 12000;
 
-function pick(length) {
-  const value = new Uint32Array(1);
-  crypto.getRandomValues(value);
-  return value[0] % length;
+function randSeed() {
+  return crypto.getRandomValues(new Uint32Array(1))[0];
 }
 
-function newRound(round, wins, t = now()) {
-  const base = () => ({ x: 0, hp: 100, lastAt: t, lastAttack: 0, onlineAt: t });
-  return {
-    round, wins,
-    fighters: [{ ...base(), x: 145 }, { ...base(), x: 815 }],
-    weapon: pick(WEAPONS.length), talent: pick(TALENTS.length),
-    roundStarted: t, roundEnds: 0, winner: null, status: 'active',
-  };
-}
-
-function saneArena(value) {
-  const arena = typeof value === 'string' ? safeJson(value) : value;
-  if (!arena || typeof arena !== 'object' || Array.isArray(arena)) return null;
-  if (!['pending', 'active', 'finished', 'cancelled'].includes(arena.status)) return null;
-  if (!Number.isInteger(arena.round) || !Number.isInteger(arena.weapon) || !Number.isInteger(arena.talent)) return null;
-  if (arena.weapon < 0 || arena.weapon >= WEAPONS.length || arena.talent < 0 || arena.talent >= TALENTS.length) return null;
-  if (!Array.isArray(arena.wins) || arena.wins.length !== 2 || !arena.wins.every((w) => Number.isInteger(w) && w >= 0 && w <= 2)) return null;
-  if (!Array.isArray(arena.fighters) || arena.fighters.length !== 2) return null;
-  for (const fighter of arena.fighters) {
+// state v2 = 完整帧状态（见 functions/pvp-sim.mjs）。v1 的一维对决状态视为作废，
+// 客户端收到 cancelled 后自行丢弃旧对局。
+function saneState(value) {
+  const state = typeof value === 'string' ? safeJson(value) : value;
+  if (!state || typeof state !== 'object' || Array.isArray(state) || state.v !== 2) return null;
+  if (!['pending', 'active', 'roundEnd', 'finished', 'cancelled'].includes(state.status)) return null;
+  if (!Number.isInteger(state.seed) || !PVP.BIOME_KEYS.includes(state.biome)) return null;
+  if (state.status === 'pending' || state.status === 'cancelled') return state;
+  if (!Number.isInteger(state.round) || state.round < 1 || state.round > 3) return null;
+  if (!Array.isArray(state.wins) || state.wins.length !== 2
+    || !state.wins.every((w) => Number.isInteger(w) && w >= 0 && w <= 2)) return null;
+  if (!Number.isInteger(state.tick) || state.tick < 0) return null;
+  if (!Array.isArray(state.fighters) || state.fighters.length !== 2) return null;
+  for (const fighter of state.fighters) {
     if (!fighter || typeof fighter !== 'object') return null;
-    if (![fighter.x, fighter.hp, fighter.lastAt, fighter.lastAttack, fighter.onlineAt]
+    if (![fighter.x, fighter.y, fighter.vx, fighter.vy, fighter.hp, fighter.facing,
+      fighter.attackTimer, fighter.attackCooldown, fighter.ammo, fighter.reloadTimer]
       .every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
   }
-  return arena;
+  if (!Array.isArray(state.projectiles) || state.projectiles.length > 300) return null;
+  for (const projectile of state.projectiles) {
+    if (!projectile || typeof projectile !== 'object') return null;
+    if (![projectile.x, projectile.y, projectile.vx, projectile.vy, projectile.dmg,
+      projectile.o, projectile.g, projectile.l, projectile.sz]
+      .every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  }
+  if (!Array.isArray(state.inputs) || state.inputs.length !== 2) return null;
+  if (!Array.isArray(state.onlineAt) || state.onlineAt.length !== 2
+    || !state.onlineAt.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  if (typeof state.lastSimAt !== 'number') return null;
+  return state;
 }
 
 function safeJson(text) {
@@ -157,39 +149,15 @@ function safeJson(text) {
 }
 
 function publicMatch(row, userId) {
+  const arena = saneState(row.state);
   return {
     id: String(row.id),
     opponentId: String(row.player1_id === userId ? row.player2_id : row.player1_id),
     side: row.player1_id === userId ? 0 : 1,
-    status: row.status,
-    arena: saneArena(row.state),
+    status: arena ? row.status : 'cancelled',
+    arena,
+    serverTime: now(),
   };
-}
-
-function step(arena, side, move, t) {
-  if (arena.status !== 'active' || arena.roundEnds) return;
-  const me = arena.fighters[side];
-  const other = arena.fighters[1 - side];
-  const dt = Math.max(0, Math.min(250, t - me.lastAt));
-  me.lastAt = t;
-  me.onlineAt = t;
-  const talent = TALENTS[arena.talent];
-  const weapon = WEAPONS[arena.weapon];
-  const direction = (move.right ? 1 : 0) - (move.left ? 1 : 0);
-  me.x = Math.max(28, Math.min(932, me.x + direction * (0.18 + talent.speed * 0.045) * dt));
-  if (move.attack && t - me.lastAttack >= weapon.cooldown && Math.abs(me.x - other.x) <= weapon.reach) {
-    me.lastAttack = t;
-    other.hp = Math.max(0, other.hp - Math.max(1, weapon.damage + talent.damage - talent.guard));
-  }
-  const timeout = t - arena.roundStarted >= 90000;
-  const disconnected = t - other.onlineAt >= 12000;
-  if (other.hp <= 0 || me.hp <= 0 || timeout || disconnected) {
-    const victor = other.hp <= 0 || disconnected ? side : me.hp <= 0 ? (1 - side) : (me.hp >= other.hp ? side : (1 - side));
-    arena.wins[victor] += 1;
-    arena.winner = victor;
-    arena.roundEnds = t;
-    if (arena.wins[victor] >= 2 || arena.round >= 3) arena.status = 'finished';
-  }
 }
 
 async function arenaAction(db, row, side, action, move) {
@@ -198,35 +166,43 @@ async function arenaAction(db, row, side, action, move) {
       ? unwrap(await db.from('matches').select('*').eq('id', row.id).maybeSingle())
       : row;
     if (!latest) break;
-    const stored = saneArena(latest.state);
+    const stored = saneState(latest.state);
     if (!stored) break;
-    const arena = structuredClone(stored);
+    const state = structuredClone(stored);
     const t = now();
     if (action === 'accept' && latest.status === 'pending' && side === 1) {
-      Object.assign(arena, newRound(1, [0, 0], t));
-    } else if (action === 'tick' && latest.status === 'active') {
-      if (arena.roundEnds && arena.status !== 'finished' && t - arena.roundEnds >= 2500) {
-        Object.assign(arena, newRound(arena.round + 1, arena.wins, t));
+      Object.assign(state, PVP.newMatchState(state.seed, state.biome, t));
+    } else if (action === 'tick' && (latest.status === 'active' || latest.status === 'roundEnd')) {
+      state.inputs[side] = move;
+      state.onlineAt[side] = t;
+      const other = 1 - side;
+      if (t - state.onlineAt[other] >= DISCONNECT_MS) {
+        state.status = 'finished';
+        state.wins[side] = 2;
+        state.winner = side;
+        state.roundEndTick = state.tick;
       } else {
-        step(arena, side, move, t);
+        const gap = Math.max(0, Math.min(PVP.MAX_CATCHUP_TICKS * PVP.STEP_MS, t - state.lastSimAt));
+        PVP.stepMatch(state, Math.floor(gap / PVP.STEP_MS), t);
+        state.lastSimAt = t;
       }
     } else if (action === 'leave' && latest.status === 'pending') {
-      arena.status = 'cancelled';
-    } else if (action === 'leave' && latest.status === 'active') {
-      arena.wins[1 - side] = 2;
-      arena.winner = 1 - side;
-      arena.roundEnds = t;
-      arena.status = 'finished';
+      state.status = 'cancelled';
+    } else if (action === 'leave' && (latest.status === 'active' || latest.status === 'roundEnd')) {
+      state.status = 'finished';
+      state.wins[1 - side] = 2;
+      state.winner = 1 - side;
+      state.roundEndTick = state.tick;
     } else {
       return publicMatch(latest, side === 0 ? latest.player1_id : latest.player2_id);
     }
     const written = await db.from('matches')
-      .update({ state: arena, status: arena.status, version: Number(latest.version) + 1, updated_at: t })
+      .update({ state, status: state.status, version: Number(latest.version) + 1, updated_at: t })
       .eq('id', latest.id).eq('version', Number(latest.version)).select('id');
     const changed = unwrap(await written);
     if (Array.isArray(changed) && changed.length === 1) {
       return publicMatch({
-        ...latest, state: arena, status: arena.status, version: Number(latest.version) + 1,
+        ...latest, state, status: state.status, version: Number(latest.version) + 1,
       }, side === 0 ? latest.player1_id : latest.player2_id);
     }
   }
@@ -456,7 +432,7 @@ async function handleRequest({ request, supabase: db }) {
     const matchId = newId();
     unwrap(await db.from('matches').insert({
       id: matchId, player1_id: user.id, player2_id: target, status: 'pending',
-      state: { ...newRound(1, [0, 0]), status: 'pending' }, version: 0, updated_at: now(),
+      state: PVP.newPendingState(randSeed()), version: 0, updated_at: now(),
     }).select('id'));
     return json({ id: matchId });
   }
@@ -476,7 +452,10 @@ async function handleRequest({ request, supabase: db }) {
     if (!isPost) return json({ error: '请求方法无效' }, 405);
     return json(await arenaAction(db, row, side,
       action === 'acceptMatch' ? 'accept' : action === 'leaveMatch' ? 'leave' : 'tick',
-      { left: Boolean(body.left), right: Boolean(body.right), attack: Boolean(body.attack) }));
+      {
+        left: Boolean(body.left), right: Boolean(body.right), jump: Boolean(body.jump),
+        attack: Boolean(body.attack), reload: Boolean(body.reload),
+      }));
   }
 
   return json({ error: '未知操作' }, 404);

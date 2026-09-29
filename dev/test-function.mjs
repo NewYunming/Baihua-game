@@ -119,28 +119,81 @@ const accepted = await call('acceptMatch', { id: matchId }, { token: second.toke
 assert.equal(accepted.status, 200);
 assert.equal(accepted.body.arena.status, 'active');
 assert.equal(accepted.body.side, 1);
-assert.ok(accepted.body.arena.weapon >= 0 && accepted.body.arena.weapon < 8, '双方共用随机装备');
+assert.ok(Number.isInteger(accepted.body.arena.seed), '对局应携带地图种子');
+assert.ok(accepted.body.arena.biome, '对局应携带群系');
+const hostView = await call('match', { id: matchId }, { token: first.token });
+assert.equal(
+    JSON.stringify({ ...hostView.body.arena, lastSimAt: 0 }),
+    JSON.stringify({ ...accepted.body.arena, lastSimAt: 0 }),
+    '双方应看到同一份权威状态');
 
 let guest = accepted.body;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-// 服务端按真实经过时间推进移动与冷却，所以这段用挂钟驱动的回合需要真实等待。
-for (let i = 0; i < 400 && Math.abs(guest.arena.fighters[1].x - guest.arena.fighters[0].x) > 60; i++) {
-    guest = (await call('tick', { id: matchId, left: true }, { token: second.token })).body;
-    await sleep(25);
+// 服务端按真实经过时间补帧，所以这段要真实等待；双方都得发 tick 保活，否则掉线判负。
+// 进攻方走到武器能命中的距离、且确认自己面对着对手才停手（朝向来自最后一次移动输入，
+// 否则可能穿过对手背对着人空挥）；被台阶挡住才跳——一直跳会落上浮空平台，
+// 那样双方垂直差超过命中容差，弹丸永远打不到人。
+const STANDOFF = 44;
+const VERTICAL_TOLERANCE = 40;   // 与 pvp-sim 的 MELEE_VERTICAL_TOLERANCE 一致
+const verticalGap = (a, b) => Math.max(0, a.y - (b.y + 32), b.y - (a.y + 32));
+const chase = (me, other, prevX, stuck) => {
+    const input = { attack: true };
+    const delta = other.x - me.x;
+    const want = delta >= 0 ? 1 : -1;
+    // 站定了却打不到人（差一层台阶、子弹从头顶掠过）就一直朝对手走，被挡住就跳，
+    // 宁可贴到脸上也不要站在原地空挥。
+    if (stuck || verticalGap(me, other) > VERTICAL_TOLERANCE || Math.abs(delta) > STANDOFF || me.facing !== want) {
+        if (want > 0) input.right = true; else input.left = true;
+        if (Math.abs(me.x - prevX) < 1) input.jump = true;
+    }
+    return input;
+};
+let prevX = guest.arena.fighters[1].x;
+let lastFoeHp = guest.arena.fighters[0].hp;
+let stall = 0;
+let closest = Infinity;
+let movedLeft = false;
+let i = 0;
+for (; i < 900 && guest.arena.status === 'active'; i++) {
+    await call('tick', { id: matchId }, { token: first.token });
+    const me = guest.arena.fighters[1];
+    guest = (await call('tick', { id: matchId, ...chase(me, guest.arena.fighters[0], prevX, stall > 45) },
+        { token: second.token })).body;
+    prevX = me.x;
+    const foeHp = guest.arena.fighters[0].hp;
+    stall = foeHp < lastFoeHp ? 0 : stall + 1;
+    lastFoeHp = foeHp;
+    closest = Math.min(closest, Math.abs(guest.arena.fighters[1].x - guest.arena.fighters[0].x));
+    if (guest.arena.fighters[1].x < 1768) movedLeft = true;
+    await sleep(20);
 }
-assert.ok(guest.arena.fighters[1].x < 815, '后退应改变坐标');
-assert.ok(Math.abs(guest.arena.fighters[1].x - guest.arena.fighters[0].x) <= 70, '双方应能进入最短武器射程');
-for (let i = 0; i < 600 && !guest.arena.roundEnds; i++) {
-    guest = (await call('tick', { id: matchId, attack: true }, { token: second.token })).body;
-    await sleep(25);
+if (!movedLeft || closest > 70 || !(guest.arena.roundEndTick > 0)) {
+    console.log('卡住诊断', JSON.stringify({
+        seed: guest.arena.seed, round: guest.arena.round, tick: guest.arena.tick,
+        status: guest.arena.status, winner: guest.arena.winner, iterations: i,
+        movedLeft, closest: Math.round(closest),
+        fighters: guest.arena.fighters.map(f => ({ x: Math.round(f.x), y: Math.round(f.y), hp: f.hp, facing: f.facing })),
+    }));
 }
-assert.ok(guest.arena.roundEnds, '持续攻击应结束本局');
+assert.ok(movedLeft, '进攻方应能移动');
+assert.ok(closest <= 70, '双方应能进入最短武器射程');
+assert.ok(guest.arena.roundEndTick > 0, '持续攻击应结束本局');
 assert.ok(guest.arena.fighters[0].hp <= 0, '被攻击方应掉血至倒');
 assert.equal(guest.arena.fighters[1].hp, 100, '未出手的一方不应掉血');
 assert.equal(guest.arena.winner, 1, '先手方应赢下本局');
 assert.ok(guest.arena.wins[1] >= 1);
 const versioned = fake.store.matches.find(row => String(row.id) === matchId);
 assert.ok(Number(versioned.version) > 1, '每次写入都应递增版本号');
+
+// v1 旧对局状态应被视作作废，客户端收到 cancelled 后自行丢弃。
+fake.store.matches.push({
+    id: '00000000-0000-4000-8000-000000000001', player1_id: first.id, player2_id: second.id,
+    status: 'active', state: { round: 1, wins: [0, 0], fighters: [{}, {}], status: 'active' },
+    version: 0, updated_at: Date.now(),
+});
+const legacy = await call('match', { id: '00000000-0000-4000-8000-000000000001' }, { token: first.token });
+assert.equal(legacy.body.status, 'cancelled', 'v1 状态不应再进入对局');
+
 const left = await call('leaveMatch', { id: matchId }, { token: first.token });
 assert.ok(['finished', 'cancelled'].includes(left.body.status));
 const finished = await call('match', { id: matchId }, { token: second.token });

@@ -5,9 +5,10 @@
     const closeButton = byId('socialClose');
     const status = byId('socialStatus');
     const authForm = byId('socialAuthForm');
-    const weapons = ['木剑', '猎户短矛', '精铁长剑', '风暴战斧', '暗影裂刃', '星火链刃', '雷神之锤', '天穹贯日枪'];
-    const talents = ['锋锐校准', '轻盈步法', '坚韧护甲', '迅捷出手'];
-    const input = { left: false, right: false, attack: false };
+    const invite = byId('pvpInvite');
+    const inviteBody = byId('pvpInviteBody');
+    const inviteAccept = byId('pvpInviteAccept');
+    const inviteDecline = byId('pvpInviteDecline');
     let user = null;
     let friends = [];
     let scores = [];
@@ -15,16 +16,17 @@
     let leaderboard = [];
     let boardMode = 'story';
     let serverTime = Date.now();
-    let activeMatch = null;
     let authMode = 'register';
     let selectedTab = 'profile';
     let openedFrom = 'title';
     let pausedByHub = false;
+    let pausedByInvite = false;
     let pendingRuns = {};
     let flushingRuns = false;
-    let tickBusy = false;
-    let lastPendingPoll = 0;
     let searchTimer = null;
+    let inviteMatch = null;
+    let handledInvites = new Set();
+    let inviteBusy = false;
     try { pendingRuns = JSON.parse(localStorage.getItem('baihuaPendingRuns') || '{}') || {}; } catch { pendingRuns = {}; }
     const apiBase = document.querySelector('script[data-api]')?.dataset.api || '/api';
     let sessionToken = (() => { try { return localStorage.getItem('baihuaSessionToken') || ''; } catch { return ''; } })();
@@ -77,9 +79,9 @@
         if (tab === 'leaderboard') void refreshLeaderboard();
         if (tab === 'arena') renderArena();
         if (tab === 'friends') renderFriends();
-        if (tab === 'arena' && activeMatch) byId('socialArenaMatch').focus();
     }
     function open(tab = 'profile', source = 'title') {
+        if (window.baihuaPvp?.isActive()) { say('对决进行中，请先结束对局。'); return; }
         openedFrom = source;
         hub.hidden = false;
         pausedByHub = source !== 'pause' && Boolean(window.baihuaSocialBridge?.pause());
@@ -90,10 +92,6 @@
         if (user) void refresh();
     }
     function close() {
-        if (activeMatch && ['pending', 'active'].includes(activeMatch.status)) {
-            say('对局尚未结束，请完成对决后返回游戏。');
-            return;
-        }
         hub.hidden = true;
         if (pausedByHub) window.baihuaSocialBridge?.resume();
         pausedByHub = false;
@@ -143,45 +141,35 @@
         if (!pending.length && !accepted.length) list.append(make('p', '暂无好友。', 'social-muted'));
     }
     function renderArena() {
-        const hasMatch = Boolean(activeMatch);
-        byId('socialArenaLobby').hidden = hasMatch;
-        byId('socialArenaMatch').hidden = !hasMatch;
-        if (!hasMatch) {
-            const invites = byId('socialInvites');
-            const online = byId('socialOnlineFriends');
-            invites.replaceChildren(); online.replaceChildren();
-            if (!user) { invites.append(make('p', '请先在档案战绩中注册或登录。', 'social-muted')); return; }
-            for (const match of matches.filter(item => item.status === 'pending' && item.side === 1)) {
-                invites.append(row(`${match.opponentName || '好友'} 邀请你对决`, '接受邀请', () => void acceptMatch(match.id)));
-            }
-            const ready = friends.filter(friend => friend.status === 'accepted' && serverTime - friend.lastSeen < 15000);
-            for (const friend of ready) online.append(row(`${friend.username} 在线`, '发起对决', () => void challenge(friend)));
-            if (!invites.childElementCount && !ready.length) online.append(make('p', '暂无在线好友。', 'social-muted'));
-            return;
+        const invites = byId('socialInvites');
+        const online = byId('socialOnlineFriends');
+        invites.replaceChildren(); online.replaceChildren();
+        if (!user) { invites.append(make('p', '请先在档案战绩中注册或登录。', 'social-muted')); return; }
+        for (const match of matches.filter(item => item.status === 'pending' && item.side === 1)) {
+            invites.append(row(`${match.opponentName || '好友'} 邀请你对决`, '接受邀请', () => void acceptInvite(match)));
         }
-        const match = activeMatch;
-        const arena = match.arena;
-        const side = match.side;
-        const opponent = friends.find(friend => friend.userId === match.opponentId)?.username || match.opponentName || '对手';
-        byId('socialRoundTitle').textContent = `第 ${arena.round} 局`;
-        byId('socialMatchScore').textContent = `${arena.wins[side]} : ${arena.wins[1 - side]}`;
-        byId('socialLoadout').textContent = `共同装备：${weapons[arena.weapon]} · ${talents[arena.talent]}`;
-        for (let i = 0; i < 2; i++) {
-            const fighter = arena.fighters[i];
-            byId(`socialFighter${i}`).style.left = `${fighter.x / 9.6}%`;
-            byId(`socialHealth${i}`).style.width = `${fighter.hp}%`;
-            byId(`socialHealthLabel${i}`).textContent = `${i === side ? user?.username : opponent} · ${fighter.hp} HP`;
-        }
-        byId('socialMatchBack').hidden = match.status !== 'finished';
-        byId('socialMatchExit').hidden = !['pending', 'active'].includes(match.status);
-        byId('socialMatchExit').textContent = match.status === 'pending' ? '取消邀请' : '认输并退出';
-        byId('socialMatchMessage').textContent = match.status === 'pending'
-            ? '等待好友接受邀请'
-            : match.status === 'finished'
-                ? `对决结束 · ${arena.wins[side] >= 2 ? '你获胜' : '好友获胜'}`
-                : arena.roundEnds
-                    ? `本局${arena.winner === side ? '获胜' : '失利'}，下一局即将开始`
-                    : '双方同时在线 · 三局两胜';
+        const ready = friends.filter(friend => friend.status === 'accepted' && serverTime - friend.lastSeen < 15000);
+        for (const friend of ready) online.append(row(`${friend.username} 在线`, '发起对决', () => void challenge(friend)));
+        if (!invites.childElementCount && !ready.length) online.append(make('p', '暂无在线好友。', 'social-muted'));
+    }
+    // 邀请弹窗由 refresh 轮询驱动，所以社交面板关着、玩家正在单人局里也能收到。
+    function scanInvites() {
+        if (inviteMatch || inviteBusy || window.baihuaPvp?.isActive()) return;
+        const pending = matches.find(item => item.status === 'pending' && item.side === 1 && !handledInvites.has(item.id));
+        if (!pending) return;
+        inviteMatch = pending;
+        inviteBody.textContent = `${pending.opponentName || '好友'} 邀请你进入随机地图实时对决，三局两胜。接受后会离开当前界面。`;
+        invite.hidden = false;
+        pausedByInvite = Boolean(window.baihuaSocialBridge?.pause());
+        inviteAccept.disabled = false;
+        inviteDecline.disabled = false;
+        inviteAccept.focus();
+    }
+    function hideInvite() {
+        invite.hidden = true;
+        inviteMatch = null;
+        if (pausedByInvite) window.baihuaSocialBridge?.resume();
+        pausedByInvite = false;
     }
     function renderAll() { renderProfile(); renderLeaderboard(); renderFriends(); renderArena(); }
     async function refresh() {
@@ -193,6 +181,7 @@
             matches = result.matches;
             serverTime = result.serverTime;
             renderAll();
+            scanInvites();
             if (Object.keys(pendingRuns).length) void flushPendingRuns();
         } catch (error) {
             if (String(error.message).includes('登录')) {
@@ -211,17 +200,55 @@
             return result;
         } catch (error) { say(error.message); return null; }
     }
-    async function challenge(friend) {
-        const result = await act('challenge', { userId: friend.userId });
-        if (!result) return;
-        activeMatch = await api('match', { id: result.id });
-        setTab('arena'); renderArena();
+    // 对决画面在主画布里跑，所以进入前要关掉社交面板并把焦点还给画布。
+    function enterMatch(result, opponentName) {
+        const pvp = window.baihuaPvp;
+        if (!pvp) { say('对决模块未加载，请刷新页面'); return false; }
+        hideInvite();
+        if (!hub.hidden) close();
+        if (!pvp.start(result, { opponent: opponentName })) { say('无法进入对决'); return false; }
+        byId('gameCanvas').focus();
+        return true;
     }
-    async function acceptMatch(id) {
-        const result = await act('acceptMatch', { id });
-        if (!result) return;
-        activeMatch = result;
-        setTab('arena'); renderArena();
+    async function acceptInvite(match) {
+        if (inviteBusy) return;
+        inviteBusy = true;
+        inviteAccept.disabled = true;
+        inviteDecline.disabled = true;
+        try {
+            const result = await api('acceptMatch', { id: match.id });
+            handledInvites.add(match.id);
+            const opponent = match.opponentName
+                || friends.find(friend => friend.userId === match.opponentId)?.username || '好友';
+            if (!enterMatch(result, opponent)) return;
+            say('对决开始');
+            await refresh();
+        } catch (error) {
+            say(error.message);
+            inviteAccept.disabled = false;
+            inviteDecline.disabled = false;
+        } finally { inviteBusy = false; }
+    }
+    async function declineInvite(match) {
+        if (inviteBusy) return;
+        inviteBusy = true;
+        handledInvites.add(match.id);
+        try { await api('leaveMatch', { id: match.id }); } catch {}
+        hideInvite();
+        inviteBusy = false;
+        say('已拒绝邀请');
+        await refresh();
+    }
+    async function challenge(friend) {
+        if (inviteBusy) return;
+        inviteBusy = true;
+        try {
+            const created = await api('challenge', { userId: friend.userId });
+            const result = await api('match', { id: created.id });
+            if (!enterMatch(result, friend.username)) return;
+            say(`已邀请 ${friend.username}，等待对方接受`);
+        } catch (error) { say(error.message); }
+        finally { inviteBusy = false; }
     }
     function savePendingRuns() {
         try { localStorage.setItem('baihuaPendingRuns', JSON.stringify(pendingRuns)); } catch {}
@@ -254,22 +281,6 @@
         savePendingRuns();
         if (!user) { if (!hub.hidden) say('结算已暂存在本机，登录后自动上榜'); return; }
         void flushPendingRuns();
-    }
-    async function tick() {
-        if (!activeMatch || tickBusy || document.hidden) return;
-        if (activeMatch.status === 'finished') return;
-        if (activeMatch.status === 'pending' && Date.now() - lastPendingPoll < 1500) return;
-        tickBusy = true;
-        try {
-            if (activeMatch.status === 'pending') {
-                lastPendingPoll = Date.now();
-                activeMatch = await api('match', { id: activeMatch.id });
-            } else activeMatch = await api('tick', { id: activeMatch.id, ...input });
-            if (activeMatch.status === 'cancelled') { activeMatch = null; say('邀请已取消'); }
-            renderArena();
-            if (activeMatch?.status === 'finished') await refresh();
-        } catch (error) { if (!hub.hidden) say(error.message); }
-        finally { tickBusy = false; }
     }
 
     window.addEventListener('baihua:open-social', event => open(event.detail?.tab, event.detail?.source));
@@ -323,30 +334,22 @@
             } catch (error) { say(error.message); }
         }, 120);
     });
-    byId('socialMatchBack').addEventListener('click', () => { activeMatch = null; renderArena(); });
-    byId('socialMatchExit').addEventListener('click', async () => {
-        if (!activeMatch) return;
-        const result = await act('leaveMatch', { id: activeMatch.id });
-        if (!result) return;
-        activeMatch = null; input.left = input.right = input.attack = false;
-        renderArena(); say(result.status === 'cancelled' ? '邀请已取消' : '已认输并退出对局');
-    });
-    for (const button of document.querySelectorAll('[data-arena-action]')) {
-        const key = button.dataset.arenaAction;
-        button.addEventListener('pointerdown', event => { event.preventDefault(); input[key] = true; button.setPointerCapture?.(event.pointerId); });
-        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, () => { input[key] = false; });
-    }
+    inviteAccept.addEventListener('click', () => { if (inviteMatch) void acceptInvite(inviteMatch); });
+    inviteDecline.addEventListener('click', () => { if (inviteMatch) void declineInvite(inviteMatch); });
     window.addEventListener('keydown', event => {
-        if (hub.hidden || selectedTab !== 'arena' || !activeMatch || activeMatch.status !== 'active') return;
-        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLButtonElement) return;
-        const key = { KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', KeyJ: 'attack', Space: 'attack' }[event.code];
-        if (key) { input[key] = true; event.preventDefault(); }
-    });
-    window.addEventListener('keyup', event => {
-        const key = { KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', KeyJ: 'attack', Space: 'attack' }[event.code];
-        if (key) input[key] = false;
+        if (invite.hidden || !inviteMatch) return;
+        if (event.code === 'Escape') { event.preventDefault(); void declineInvite(inviteMatch); }
+        else if (event.code === 'Enter') { event.preventDefault(); void acceptInvite(inviteMatch); }
     });
     window.addEventListener('baihua:run', event => { saveRun(event.detail); });
+    // pvp.js 只负责画布里的对决，网络与登录态仍由这里持有。
+    window.baihuaSocialNet = {
+        api,
+        notify: say,
+        refresh: () => refresh(),
+        get user() { return user; },
+        isHubOpen: () => !hub.hidden,
+    };
     if (document.modelContext?.registerTool) {
         const lifecycle = new AbortController();
         void Promise.resolve(document.modelContext.registerTool({
@@ -363,8 +366,8 @@
         }, { signal: lifecycle.signal })).catch(() => {});
         window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
     }
-    setInterval(() => { if (user && !document.hidden) void refresh(); }, 5000);
-    setInterval(() => { void tick(); }, 160);
+    // 3 秒轮询一次：邀请弹窗的延迟上限，也是好友在线状态的刷新频率。
+    setInterval(() => { if (user && !document.hidden && !window.baihuaPvp?.isActive()) void refresh(); }, 3000);
     renderAll();
     void refresh();
 })();

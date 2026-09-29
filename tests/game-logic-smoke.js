@@ -125,7 +125,8 @@ const elements = {
     touchSizeValue: makeElement(),
     rotateHint: makeElement(),
     liveStatus: makeElement(),
-    socialHub: Object.assign(makeElement(), { hidden: true })
+    socialHub: Object.assign(makeElement(), { hidden: true }),
+    pvpInvite: Object.assign(makeElement(), { hidden: true })
 };
 
 const documentMock = {

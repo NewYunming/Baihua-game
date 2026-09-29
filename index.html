@@ -630,7 +630,7 @@
             border: 0;
         }
 
-        #socialHub[hidden], .social-tab[hidden], #socialAuth[hidden], #socialAccount[hidden], #socialArenaMatch[hidden], #socialArenaLobby[hidden] { display: none !important; }
+        #socialHub[hidden], .social-tab[hidden], #socialAuth[hidden], #socialAccount[hidden], #socialArenaLobby[hidden], #pvpInvite[hidden] { display: none !important; }
         #socialHub {
             position: absolute;
             inset: 0;
@@ -688,29 +688,54 @@
         .social-status { flex: 0 0 auto; min-height: 27px; padding: 4px 14px; color: #ffe28a; background: #122737; font-size: 13px; }
         .social-online { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #81dea0; }
         .social-offline { background: #718895; }
-        .social-arena-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-        .social-arena-score { color: #b9e7d1; font-size: 28px; font-weight: bold; }
-        .social-loadout { color: #f6e39c !important; text-align: center; font-size: 17px; }
-        .social-stage { position: relative; height: clamp(180px, 43vh, 330px); min-height: 180px; overflow: hidden; border: 2px solid #5e8790; background: radial-gradient(circle at 50% 20%, #48788b, #17394f 62%, #102532); }
-        .social-ground { position: absolute; inset: auto 0 0; height: 38px; background: repeating-linear-gradient(90deg, #2b4e3a 0 40px, #203d34 40px 80px); border-top: 6px solid #78ad83; }
-        .social-fighter { position: absolute; bottom: 38px; width: 34px; height: 64px; transform: translateX(-50%); transition: left .14s linear; }
-        .social-fighter::before { content: ''; display: block; width: 25px; height: 25px; margin: auto; border: 3px solid #213746; border-radius: 3px; background: #e7c3a6; }
-        .social-fighter::after { content: '◆'; display: block; height: 39px; border: 4px solid #244855; background: #b9e7d1; color: #ffe28a; text-align: right; font-size: 22px; }
-        .social-fighter.opponent::after { background: #e9a3a3; border-color: #653b49; text-align: left; }
-        .social-health { position: absolute; top: 10px; width: 34%; min-width: 125px; height: 27px; border: 1px solid #a6bec1; background: #1e2b38; color: white; font-size: 13px; font-weight: bold; z-index: 2; }
-        .social-health.left { left: 10px; } .social-health.right { right: 10px; }
-        .social-health i { display: block; height: 100%; background: #55bb82; } .social-health.right i { background: #c86970; }
-        .social-health span { position: absolute; inset: 4px; white-space: nowrap; text-shadow: 1px 1px #000; }
-        .social-arena-controls { display: flex; justify-content: center; gap: 10px; margin-top: 8px; }
-        .social-arena-controls button { min-width: 68px; touch-action: none; user-select: none; }
+        #pvpInvite {
+            position: absolute;
+            inset: 0;
+            z-index: 60;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(2, 7, 14, .74);
+            font-family: 'Courier New', monospace;
+        }
+        .pvp-invite-card {
+            width: min(440px, 92vw);
+            padding: 20px 22px;
+            border: 2px solid #6d9aa3;
+            border-radius: 4px;
+            background: #102435;
+            color: #eaf4ff;
+            text-align: center;
+            box-shadow: 0 14px 36px rgba(0, 0, 0, .55);
+        }
+        .pvp-invite-card h2 { margin: 0 0 10px; color: #ffe28a; font-size: 21px; }
+        .pvp-invite-card p { margin: 0 0 16px; color: #b7cbd5; font-size: 14px; line-height: 1.55; }
+        .pvp-invite-actions { display: flex; gap: 10px; justify-content: center; }
+        .pvp-invite-actions button {
+            min-width: 112px;
+            min-height: 42px;
+            padding: 7px 14px;
+            border: 1px solid #678f94;
+            border-radius: 3px;
+            background: #193949;
+            color: #eefaff;
+            font: bold 14px 'Courier New', monospace;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .pvp-invite-actions button.primary { background: #b9e7d1; color: #10242a; border-color: #b9e7d1; }
+        .pvp-invite-actions button:disabled { opacity: .5; cursor: not-allowed; }
+        .pvp-invite-actions button:focus-visible { outline: 2px solid #ffe28a; outline-offset: 2px; }
         @media (max-width: 640px), (max-height: 440px) {
             .social-grid { grid-template-columns: 1fr; gap: 10px; }
             .social-header { padding: 5px 9px; } .social-header strong { font-size: 16px; }
             .social-nav { padding: 5px 8px; } .social-nav button { min-height: 34px; }
             .social-tab { padding: 8px 10px 14px; }
             .social-panel { padding: 10px; }
-            .social-stage { height: clamp(150px, 36vh, 260px); }
-            .social-loadout { font-size: 14px; }
+            .pvp-invite-card { padding: 14px 14px 16px; }
+            .pvp-invite-card h2 { font-size: 18px; }
+            .pvp-invite-actions button { min-width: 96px; }
         }
     </style>
 </head>
@@ -825,25 +850,24 @@
             </div>
             <div id="socialArena" class="social-tab" hidden>
                 <div id="socialArenaLobby">
-                    <h2>好友对决</h2><p>邀请在线好友。双方每局拿到同一武器和天赋，先赢两局获胜。</p><div id="socialInvites"></div><div id="socialOnlineFriends"></div>
-                </div>
-                <div id="socialArenaMatch" tabindex="-1" hidden>
-                    <div class="social-arena-title"><h2 id="socialRoundTitle">第 1 局</h2><span id="socialMatchScore" class="social-arena-score">0 : 0</span></div>
-                    <p id="socialLoadout" class="social-loadout"></p>
-                    <div class="social-stage">
-                        <div class="social-health left"><i id="socialHealth0"></i><span id="socialHealthLabel0"></span></div>
-                        <div class="social-health right"><i id="socialHealth1"></i><span id="socialHealthLabel1"></span></div>
-                        <div id="socialFighter0" class="social-fighter"></div><div id="socialFighter1" class="social-fighter opponent"></div><div class="social-ground"></div>
-                    </div>
-                    <p id="socialMatchMessage" class="social-loadout"></p>
-                    <div class="social-arena-controls"><button type="button" data-arena-action="left">◀</button><button type="button" data-arena-action="right">▶</button><button type="button" data-arena-action="attack">攻击</button></div>
-                    <p class="social-muted">键盘：A/D 或方向键移动，J 或空格攻击。</p>
-                    <button id="socialMatchExit" type="button">取消邀请</button>
-                    <button id="socialMatchBack" type="button" hidden>返回好友大厅</button>
+                    <h2>好友对决</h2>
+                    <p>双方进入同一张随机地图、拿到同一把武器，按正式游戏的操作实时对战，三局两胜。收到邀请时会弹窗提醒。</p>
+                    <div id="socialInvites"></div>
+                    <div id="socialOnlineFriends"></div>
                 </div>
             </div>
             <div id="socialStatus" class="social-status" role="status" aria-live="polite"></div>
         </section>
+        <div id="pvpInvite" hidden role="dialog" aria-modal="true" aria-labelledby="pvpInviteTitle">
+            <div class="pvp-invite-card">
+                <h2 id="pvpInviteTitle">好友对决邀请</h2>
+                <p id="pvpInviteBody"></p>
+                <div class="pvp-invite-actions">
+                    <button id="pvpInviteAccept" class="primary" type="button">接受对决</button>
+                    <button id="pvpInviteDecline" type="button">拒绝</button>
+                </div>
+            </div>
+        </div>
         <div id="rotateHint" role="status">请将设备旋转至横屏<small>横屏可避免操作区重叠</small></div>
         <div id="liveStatus" class="sr-only" aria-live="polite"></div>
     </div>
@@ -2592,7 +2616,8 @@
             touchPauseButtonEl.classList.toggle('is-paused', manualPaused);
             touchPauseButtonEl.setAttribute('aria-pressed', manualPaused ? 'true' : 'false');
             touchPauseButtonEl.setAttribute('aria-label', manualPaused ? '继续游戏' : '暂停游戏');
-            touchPauseButtonEl.style.visibility = passiveDetailsOpen ? 'hidden' : '';
+            // 对决不能暂停（服务器一直在推进），所以把无效的暂停键藏起来。
+            touchPauseButtonEl.style.visibility = passiveDetailsOpen || gameState === 'pvp' ? 'hidden' : '';
             pauseTouchSizeRowEl.hidden = !touchMode;
             touchSizeSliderEl.disabled = !touchMode;
         }
@@ -2789,7 +2814,7 @@
         }
 
         function syncTouchControlsVisibility() {
-            const visible = touchMode && gameState === 'playing';
+            const visible = touchMode && (gameState === 'playing' || gameState === 'pvp');
             touchControlsEl.style.display = visible ? 'block' : 'none';
             touchControlsEl.setAttribute('aria-hidden', visible ? 'false' : 'true');
             syncPauseInterface();
@@ -8097,6 +8122,8 @@
         // ============ 输入处理 ============
         window.addEventListener('keydown', e => {
             if (!document.getElementById('socialHub').hidden) return;
+            // 对决邀请弹窗期间由 social.js 独占键盘，避免 Esc 同时触发暂停和拒绝。
+            if (!document.getElementById('pvpInvite').hidden) return;
             initAudio();
 
             if (gameState === 'title') {
@@ -8104,6 +8131,20 @@
                     e.preventDefault();
                     disableTouchMode();
                     restartGame();
+                }
+                return;
+            }
+
+            if (gameState === 'pvp') {
+                if (e.code === 'Escape') {
+                    if (e.repeat) return;
+                    e.preventDefault();
+                    window.baihuaPvpEscape?.();
+                    return;
+                }
+                keys[e.code] = true;
+                if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+                    e.preventDefault();
                 }
                 return;
             }
@@ -8194,7 +8235,11 @@
                 if (action === 'left') keys['KeyA'] = state;
                 if (action === 'right') keys['KeyD'] = state;
                 if (action === 'jump') keys['Space'] = state;
-                if (action === 'reload' && state && gameState === 'playing') player.startReload();
+                if (action === 'reload') {
+                    // 对决里装填由共享模拟处理，所以只是把 R 键按下/抬起转成输入。
+                    if (gameState === 'pvp') keys['KeyR'] = state;
+                    else if (state && gameState === 'playing') player.startReload();
+                }
                 if (action === 'heal') keys['KeyU'] = state;
             };
             const start = e => {
@@ -8302,6 +8347,9 @@
                     openPassiveDetails(passiveSlot);
                     return;
                 }
+                setAttackPointers(canvasAttackPointerIds, e, true);
+            } else if (gameState === 'pvp') {
+                // 对决没有被动 HUD，点画布即攻击，手感与正式游戏一致。
                 setAttackPointers(canvasAttackPointerIds, e, true);
             }
         });
@@ -8735,6 +8783,10 @@
 
         // ============ 游戏循环 ============
         function update() {
+            if (gameState === 'pvp') {
+                window.baihuaPvpUpdate?.();
+                return;
+            }
             if (gameState !== 'playing') return;
             
             // 更新玩家
@@ -8954,6 +9006,11 @@
                 return;
             }
 
+            if (gameState === 'pvp') {
+                window.baihuaPvpRender?.(ctx);
+                return;
+            }
+
             // 绘制背景
             drawSky();
             drawBackdropDetails();
@@ -9098,11 +9155,12 @@
         function gameLoop(now) {
             const elapsed = Math.min(100, Math.max(0, now - previousFrameTime));
             previousFrameTime = now;
-            if (!pagePaused) {
+            if (!pagePaused || gameState === 'pvp') {
                 logicAccumulator += elapsed;
                 let steps = 0;
                 while (logicAccumulator >= FIXED_STEP_MS && steps < 6) {
-                    recordActivePlayTime(FIXED_STEP_MS);
+                    // 对决不计入单人局的游玩时长，否则战绩的 durationMs 会被污染。
+                    if (gameState !== 'pvp') recordActivePlayTime(FIXED_STEP_MS);
                     update();
                     logicAccumulator -= FIXED_STEP_MS;
                     steps++;
