@@ -136,13 +136,27 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const STANDOFF = 44;
 const VERTICAL_TOLERANCE = 40;   // 与 pvp-sim 的 MELEE_VERTICAL_TOLERANCE 一致
 const verticalGap = (a, b) => Math.max(0, a.y - (b.y + 32), b.y - (a.y + 32));
+// 不同层时必须锁定一个方向走：只按"对手在左还是在右"转向，会让机器人站在浮空平台
+// 正上方左右来回抖，既走不出平台边缘，又因垂直差超过命中容差永远打不到人（回合超时）。
+const offLayer = { dir: 0, wedge: 0 };
 const chase = (me, other, prevX, stuck) => {
     const input = { attack: true };
     const delta = other.x - me.x;
     const want = delta >= 0 ? 1 : -1;
+    if (verticalGap(me, other) > VERTICAL_TOLERANCE) {
+        if (!offLayer.dir) offLayer.dir = want;
+        if (offLayer.dir > 0) input.right = true; else input.left = true;
+        if (Math.abs(me.x - prevX) < 1 && ++offLayer.wedge > 30) {
+            offLayer.wedge = 0;
+            offLayer.dir = -offLayer.dir;
+        }
+        return input;
+    }
+    offLayer.dir = 0;
+    offLayer.wedge = 0;
     // 站定了却打不到人（差一层台阶、子弹从头顶掠过）就一直朝对手走，被挡住就跳，
     // 宁可贴到脸上也不要站在原地空挥。
-    if (stuck || verticalGap(me, other) > VERTICAL_TOLERANCE || Math.abs(delta) > STANDOFF || me.facing !== want) {
+    if (stuck || Math.abs(delta) > STANDOFF || me.facing !== want) {
         if (want > 0) input.right = true; else input.left = true;
         if (Math.abs(me.x - prevX) < 1) input.jump = true;
     }
