@@ -1,12 +1,13 @@
 // 邀请弹窗联调：把 dist/social.js 装进最小假 DOM，网络仍打到本地服务器（dev/serve-local.mjs）。
 // 覆盖：收到邀请弹窗 → 接受进入对决 / 拒绝作废邀请 → 同一邀请不重复弹。
 // 用法：node scripts/prepare-web-dist.mjs && node dev/serve-local.mjs & node dev/test-invite-popup.mjs
+// 打到线上时用 BAIHUA_BASE / BAIHUA_API 覆盖（默认是本地联调服务器）。
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-const BASE = 'http://127.0.0.1:8787';
-const API = `${BASE}/functions/v1/app`;
+const BASE = process.env.BAIHUA_BASE || 'http://127.0.0.1:8787';
+const API = process.env.BAIHUA_API || `${BASE}/functions/v1/app`;
 const source = await readFile(new URL('../dist/social.js', import.meta.url), 'utf8');
 
 class El {
@@ -94,6 +95,16 @@ async function call(token, op, body) {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// social.js 的自动登录是加载后异步发起的，打到线上时一次往返可能几百毫秒，
+// 所以这里轮询等待而不是睡固定时长。
+const waitFor = async (probe, label, timeoutMs = 20000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (probe()) return;
+        await sleep(50);
+    }
+    throw new Error(`等待超时：${label}`);
+};
 const stamp = Date.now() % 100000;
 const register = async name => {
     const result = await call('', 'register', { username: name, password: 'baihua-test-password' });
@@ -109,7 +120,7 @@ await call(guest.token, 'acceptFriend', { id: link.id });
 // 被邀请方：social.js 常驻运行，靠 3 秒轮询发现邀请。
 const hooks = {};
 const client = createSocial(guest.token, hooks);
-await sleep(60);
+await waitFor(() => client.sandbox.baihuaSocialNet.user, '自动登录');
 assert.equal(client.sandbox.baihuaSocialNet.user.username, guest.name, '应使用已有会话自动登录');
 assert.equal(client.invite.hidden, true, '没有邀请时不该弹窗');
 
@@ -123,7 +134,7 @@ assert.equal(client.byId('socialInvites').children.length, 1, '竞技场页也�
 
 // 拒绝：邀请作废，同一邀请不再重复弹。
 client.byId('pvpInviteDecline').click();
-await sleep(120);
+await waitFor(() => client.status() === '已拒绝邀请', '拒绝邀请');
 assert.equal(client.invite.hidden, true, '拒绝后应关闭弹窗');
 assert.equal(client.status(), '已拒绝邀请');
 assert.equal(hooks.resumes, 1, '拒绝后应恢复单人局');
@@ -140,7 +151,7 @@ const invited = await call(host.token, 'challenge', { userId: guest.id });
 await client.refresh();
 assert.equal(client.invite.hidden, false, '第二次邀请应重新弹窗');
 client.press('Enter'); // 键盘确认，与点击"接受对决"同一条路径
-await sleep(150);
+await waitFor(() => hooks.started, '接受邀请进入对决');
 assert.ok(hooks.started, '接受后应调用 baihuaPvp.start');
 assert.equal(hooks.started.info.id, invited.id);
 assert.equal(hooks.started.info.side, 1, '被邀请方应为 1 号位');

@@ -2,12 +2,13 @@
 // 的绘制与全局状态，网络仍打到本地服务器（dev/serve-local.mjs）上的真实 handler。
 // 这样本地预测、服务器权威回滚、回合流转和 HUD 绘制路径都被真正执行过。
 // 用法：node scripts/prepare-web-dist.mjs && node dev/serve-local.mjs & node dev/test-pvp-client.mjs
+// 打到线上时用 BAIHUA_BASE / BAIHUA_API 覆盖（默认是本地联调服务器）。
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-const BASE = 'http://127.0.0.1:8787';
-const API = `${BASE}/functions/v1/app`;
+const BASE = process.env.BAIHUA_BASE || 'http://127.0.0.1:8787';
+const API = process.env.BAIHUA_API || `${BASE}/functions/v1/app`;
 
 const simSource = await readFile(new URL('../dist/pvp-sim.js', import.meta.url), 'utf8');
 const clientSource = await readFile(new URL('../dist/pvp.js', import.meta.url), 'utf8');
@@ -123,6 +124,16 @@ async function call(token, op, body, query) {
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// 打到线上时一次往返可能几百毫秒，凡是等"客户端自己轮询到某个状态"的地方都要轮询等待，
+// 不能睡固定时长。
+const waitFor = async (probe, label, timeoutMs = 30000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (probe()) return;
+        await sleep(50);
+    }
+    throw new Error(`等待超时：${label}`);
+};
 const stamp = Date.now();
 const register = async name => {
     const result = await call('', 'register', { username: name, password: 'baihua-test-password' });
@@ -249,7 +260,14 @@ assert.deepEqual(
     '双方必须由同一种子生成同一张地图');
 
 // Esc 认输：结束后应直接退回标题界面。
-await sleep(250); // 等 A 也轮询到 finished，否则 result 未落地会走"再按一次确认"分支
+// 上面的循环是被邀请方先看到 finished 就退出的，发起方还得自己轮询到一次才会把 result 落地，
+// 否则 Esc 会走"再按一次确认"分支。
+for (let i = 0; i < 600 && clientA.stats.lastResponse?.status !== 'finished'; i++) {
+    clientA.sandbox.baihuaPvpUpdate();
+    clientA.sandbox.baihuaPvpRender(clientA.ctx);
+    await sleep(16);
+}
+assert.equal(clientA.stats.lastResponse?.status, 'finished', '发起方应轮询到对决结束');
 clientA.sandbox.baihuaPvpEscape();
 assert.equal(clientA.sandbox.baihuaPvp.isActive(), false, '结束后 Esc 应退出对决');
 assert.equal(clientA.sandbox.gameState, 'title', '退出后应回到标题界面');
@@ -265,7 +283,8 @@ assert.equal(clientA.sandbox.gameState, 'pvp');
 clientA.sandbox.baihuaPvpEscape();
 await sleep(30);
 clientA.sandbox.baihuaPvpEscape();
-await sleep(300);
+// 认输要先等 leaveMatch 往返完成才收尾，所以轮询等待而不是睡固定时长。
+await waitFor(() => !clientA.sandbox.baihuaPvp.isActive(), '认输退出对局');
 assert.equal(clientA.sandbox.baihuaPvp.isActive(), false, '认输后应结束对决');
 assert.equal(clientA.sandbox.gameState, 'title', '认输后应回到标题界面');
 assert.equal(clientA.stats.notice, '已认输并退出对局', '认输应给出提示');
