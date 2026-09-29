@@ -10,7 +10,14 @@
     const SNAP_PX = 14;       // 预测误差在此范围内就保留本地预测，避免橡皮筋
     const DESYNC_PX = 96;     // 超过这个距离说明预测彻底跑偏，整帧回滚到权威状态
     const BANNER_MS = 1900;
-    const FOE_LERP = 0.32;    // 对手绘制位置的平滑系数，用来吸收同步修正带来的跳变
+    // 对手快照到达间隔不均匀（轮询+网络抖动），每帧插值会"包没到就停住、包一到就跳"。
+    // 改成渲染 FOE_DELAY_MS 之前的对手、在两份快照之间插值，突刺就被摊成匀速；
+    // 断流时按最后一段速度外推 FOE_EXTRAP_MS，再久才原地等。
+    const FOE_DELAY_MS = 180;
+    const FOE_EXTRAP_MS = 220;
+    const FOE_MAX_STEP = 18;  // 对手绘制位置单帧最大位移；插值路径本身匀速，
+                              // 只有起缓冲/断流恢复这类不连续点才会触发限速
+    const GLIDE_DECAY = 0.85; // 自身坐标被服务器纠正后，画面每帧收回的比例
     const CONFIRM_MS = 3000;  // 认输需要在这个时间窗内按两次 Esc
 
     const sim = () => globalThis.PvpSim;
@@ -25,6 +32,8 @@
     let avatars = [null, null];
     let avatarKey = '';
     let foeDraw = null;
+    let foeBuf = [];          // 对手坐标快照缓冲 [{t, x, y}]，供插值取用
+    const glide = { x: 0, y: 0 }; // 自身被纠正时的画面补偿，逐帧衰减到 0
     let banner = null;
     let notice = '';
     let result = '';
@@ -133,6 +142,9 @@
         avatars = [null, null];
         avatarKey = '';
         foeDraw = null;
+        foeBuf = [];
+        glide.x = 0;
+        glide.y = 0;
         banner = null;
         result = '';
         armedAt = 0;
@@ -144,6 +156,7 @@
         if (local) {
             ensureAvatars(local);
             foeDraw = { x: local.fighters[1 - match.side].x, y: local.fighters[1 - match.side].y };
+            foeBuf = [{ t: performance.now(), x: foeDraw.x, y: foeDraw.y }];
         }
         stopMusic();
         stopBossMusic();
@@ -168,6 +181,9 @@
         result = '';
         banner = null;
         foeDraw = null;
+        foeBuf = [];
+        glide.x = 0;
+        glide.y = 0;
         avatars = [null, null];
         avatarKey = '';
         input.left = input.right = input.jump = input.attack = input.reload = false;
@@ -216,6 +232,9 @@
         if (!local || local.round !== arena.round || local.status !== arena.status) {
             local = structuredClone(arena);
             foeDraw = null;
+            foeBuf = [];
+            glide.x = 0;
+            glide.y = 0;
             ensureAvatars(local);
             seenHp = local.fighters[match.side].hp;
             if (!wasPending) {
@@ -230,6 +249,11 @@
         const freshMine = arena.fighters[match.side];
         const freshTheirs = arena.fighters[1 - match.side];
         const drift = Math.max(Math.abs(mine.x - freshMine.x), Math.abs(mine.y - freshMine.y));
+        // 纠正坐标时把差值记进 glide，让画面（角色+镜头）逐帧滑过去而不是瞬移。
+        if (drift > SNAP_PX) {
+            glide.x += mine.x - freshMine.x;
+            glide.y += mine.y - freshMine.y;
+        }
         if (drift > DESYNC_PX) {
             local = structuredClone(arena);
             foeDraw = null;
@@ -241,6 +265,8 @@
         mine.kbx = freshMine.kbx;
         mine.attackCooldown = Math.min(mine.attackCooldown, freshMine.attackCooldown);
         Object.assign(theirs, freshTheirs);
+        foeBuf.push({ t: performance.now(), x: freshTheirs.x, y: freshTheirs.y });
+        if (foeBuf.length > 40) foeBuf.shift();
         local.projectiles = structuredClone(arena.projectiles);
         local.wins = arena.wins.slice();
         local.tick = arena.tick;
@@ -285,10 +311,29 @@
 
     function updateCamera() {
         const me = local.fighters[match.side];
-        camera.x = me.x - CONFIG.CANVAS_WIDTH / 2 + sim().FIGHTER_W / 2;
-        camera.y = me.y - CONFIG.CANVAS_HEIGHT / 2 + sim().FIGHTER_H / 2;
+        // 镜头带上 glide：坐标被纠正时整个画面一起滑，避免背景瞬移。
+        camera.x = me.x + glide.x - CONFIG.CANVAS_WIDTH / 2 + sim().FIGHTER_W / 2;
+        camera.y = me.y + glide.y - CONFIG.CANVAS_HEIGHT / 2 + sim().FIGHTER_H / 2;
         camera.x = Math.max(0, Math.min(camera.x, MAP_WIDTH * CONFIG.TILE_SIZE - CONFIG.CANVAS_WIDTH));
         camera.y = Math.max(0, Math.min(camera.y, MAP_HEIGHT * CONFIG.TILE_SIZE - CONFIG.CANVAS_HEIGHT));
+    }
+
+    // 取"FOE_DELAY_MS 之前"的对手坐标：在缓冲里找目标时刻两侧快照线性插值；
+    // 快照断流时沿最后一段速度外推，超过 FOE_EXTRAP_MS 就停在最后一份快照上。
+    function sampleFoe(now) {
+        const target = now - FOE_DELAY_MS;
+        while (foeBuf.length > 2 && foeBuf[1].t <= target) foeBuf.shift();
+        const a = foeBuf[0];
+        if (!a) return null;
+        if (foeBuf.length === 1 || target <= a.t) return a;
+        const b = foeBuf[1];
+        if (target >= b.t) {
+            const dt = Math.max(1, b.t - a.t);
+            const over = Math.min(target - b.t, FOE_EXTRAP_MS);
+            return { x: b.x + (b.x - a.x) / dt * over, y: b.y + (b.y - a.y) / dt * over };
+        }
+        const k = (target - a.t) / Math.max(1, b.t - a.t);
+        return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k };
     }
 
     function update() {
@@ -305,11 +350,20 @@
         if (me.hp < seenHp) { shake = Math.max(shake, 4.5); seenHp = me.hp; }
         else if (me.hp > seenHp) seenHp = me.hp;
         const foe = local.fighters[1 - match.side];
-        if (!foeDraw) foeDraw = { x: foe.x, y: foe.y };
-        else {
-            foeDraw.x += (foe.x - foeDraw.x) * FOE_LERP;
-            foeDraw.y += (foe.y - foeDraw.y) * FOE_LERP;
-        }
+        const want = sampleFoe(performance.now());
+        if (want) {
+            if (!foeDraw) foeDraw = { x: want.x, y: want.y };
+            else {
+                const dx = want.x - foeDraw.x;
+                const dy = want.y - foeDraw.y;
+                const dist = Math.hypot(dx, dy);
+                const k = dist > FOE_MAX_STEP ? FOE_MAX_STEP / dist : 1;
+                foeDraw.x += dx * k;
+                foeDraw.y += dy * k;
+            }
+        } else if (!foeDraw) foeDraw = { x: foe.x, y: foe.y };
+        glide.x = Math.abs(glide.x) < 0.4 ? 0 : glide.x * GLIDE_DECAY;
+        glide.y = Math.abs(glide.y) < 0.4 ? 0 : glide.y * GLIDE_DECAY;
     }
 
     function drawShots(g, arena) {
@@ -473,7 +527,8 @@
             const drawn = { ...foe, x: foeDraw ? foeDraw.x : foe.x, y: foeDraw ? foeDraw.y : foe.y };
             poseAvatar(foeIndex, drawn);
             avatars[foeIndex].draw(g);
-            poseAvatar(match.side, arena.fighters[match.side]);
+            const mineNow = arena.fighters[match.side];
+            poseAvatar(match.side, { ...mineNow, x: mineNow.x + glide.x, y: mineNow.y + glide.y });
             avatars[match.side].draw(g);
             drawShots(g, arena);
         }

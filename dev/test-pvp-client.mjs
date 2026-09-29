@@ -36,7 +36,7 @@ const WEAPON_DATABASE = {
 };
 
 function createClient(label) {
-    const stats = { draws: 0, shots: 0, errors: [], lastResponse: null };
+    const stats = { draws: 0, shots: 0, errors: [], lastResponse: null, pose: [] };
     const noop = () => {};
     const ctx = new Proxy({}, {
         get: (target, key) => (key in target ? target[key] : noop),
@@ -45,7 +45,8 @@ function createClient(label) {
 
     class Player {
         constructor(x, y) { this.x = x; this.y = y; this.width = 24; this.height = 32; this.reloadMax = 1; }
-        draw() { stats.draws++; }
+        // render 每帧先画对手再画自己，所以 pose 里偶数下标是对手的绘制位置。
+        draw() { stats.draws++; stats.pose.push([this.x, this.y]); }
     }
     class Weapon {
         constructor(data, rarity) {
@@ -151,9 +152,11 @@ const clientA = createClient('host');
 const clientB = createClient('guest');
 
 // 客户端只通过 baihuaSocialNet 触网，这里顺便截下最近一次响应给机器人当"看到的对手"。
-function wireNet(client, token) {
+// lagMs > 0 时人为拖延响应，模拟线上往返抖动，用来检验对手插值缓冲的平滑度。
+function wireNet(client, token, lagMs = 0) {
     client.sandbox.baihuaSocialNet = {
         api: async (op, data) => {
+            if (lagMs) await sleep(lagMs);
             const result = await call(token, op, data);
             client.stats.lastResponse = result;
             return result;
@@ -291,5 +294,40 @@ assert.equal(clientA.stats.notice, '已认输并退出对局', '认输应给出�
 const afterLeave = await call(guest.token, 'match', { id: rematch.id });
 assert.ok(['cancelled', 'finished'].includes(afterLeave.status), `对手应看到对局作废，实际 ${afterLeave.status}`);
 
-console.log(`双客户端对决联调: OK（${finished.arena.round} 局，局分 ${finished.arena.wins.join(':')}，武器 ${clientB.sandbox.PvpSim.weaponAt(finished.arena.seed, 1).name}）`);
+// 平滑度回归：观战客户端带 250ms 人为延迟，对手来回巡逻。插值缓冲应把"包到达不均匀"
+// 摊成匀速——对手每帧绘制位移保持在步速/落速量级（SPEED 5、MAX_FALL 15），
+// 而不是旧版每帧插值那种"包没到停住、包一到跳一大截"。
+await call(host.token, 'me', {});
+await call(guest.token, 'me', {});
+const smoothMatch = await call(host.token, 'challenge', { userId: guest.id });
+const smoothHost = await call(host.token, 'match', { id: smoothMatch.id });
+const smoothGuest = await call(guest.token, 'acceptMatch', { id: smoothMatch.id });
+const clientC = createClient('lagged');
+const clientD = createClient('patrol');
+wireNet(clientC, guest.token, 250);
+wireNet(clientD, host.token);
+assert.equal(clientC.sandbox.baihuaPvp.start(smoothGuest, { opponent: host.name }), true);
+assert.equal(clientD.sandbox.baihuaPvp.start(smoothHost, { opponent: guest.name }), true);
+for (let frame = 0; frame < 600; frame++) {
+    const right = Math.floor(frame / 40) % 2 === 0;
+    clientD.sandbox.keys.KeyD = right;
+    clientD.sandbox.keys.KeyA = !right;
+    for (const client of [clientC, clientD]) {
+        client.sandbox.baihuaPvpUpdate();
+        client.sandbox.baihuaPvpRender(client.ctx);
+    }
+    await sleep(16);
+}
+const pose = clientC.stats.pose;
+let worst = 0;
+for (let i = 2; i + 2 < pose.length; i += 2) {
+    const step = Math.hypot(pose[i][0] - pose[i - 2][0], pose[i][1] - pose[i - 2][1]);
+    if (step > 150) continue; // 回合切换、坠崖重置这类瞬移不计入平滑度
+    worst = Math.max(worst, step);
+}
+assert.ok(pose.length > 200, '观战客户端应绘制了足够多帧');
+assert.ok(worst < 20, `250ms 延迟下对手画面应平滑，实际单帧最大位移 ${worst.toFixed(1)}px`);
+await call(guest.token, 'leaveMatch', { id: smoothMatch.id });
+
+console.log(`双客户端对决联调: OK（${finished.arena.round} 局，局分 ${finished.arena.wins.join(':')}，武器 ${clientB.sandbox.PvpSim.weaponAt(finished.arena.seed, 1).name}，250ms 延迟下单帧最大位移 ${worst.toFixed(1)}px）`);
 process.exit(0);
