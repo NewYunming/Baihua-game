@@ -26,15 +26,25 @@
     let lastPendingPoll = 0;
     let searchTimer = null;
     try { pendingRuns = JSON.parse(localStorage.getItem('baihuaPendingRuns') || '{}') || {}; } catch { pendingRuns = {}; }
+    const apiBase = document.querySelector('script[data-api]')?.dataset.api || '/api';
+    let sessionToken = (() => { try { return localStorage.getItem('baihuaSessionToken') || ''; } catch { return ''; } })();
+    function keepToken(token) {
+        sessionToken = token || '';
+        try {
+            if (sessionToken) localStorage.setItem('baihuaSessionToken', sessionToken);
+            else localStorage.removeItem('baihuaSessionToken');
+        } catch {}
+    }
 
-    async function api(op, data, mode) {
-        const response = await fetch(data ? '/api' : `/api?${new URLSearchParams({ op, ...(mode ? { mode } : {}) })}`, {
+    async function api(op, data, mode, query) {
+        const path = data ? apiBase : `${apiBase}?${new URLSearchParams({ op, ...(mode ? { mode } : {}), ...(query || {}), ...(sessionToken ? { t: sessionToken } : {}) })}`;
+        const response = await fetch(path, {
             method: data ? 'POST' : 'GET',
             headers: data ? { 'Content-Type': 'application/json' } : undefined,
-            body: data ? JSON.stringify({ op, ...data }) : undefined,
-            credentials: 'same-origin'
+            body: data ? JSON.stringify({ op, token: sessionToken, ...data }) : undefined
         });
         const result = await response.json();
+        if (result && typeof result === 'object' && typeof result.token === 'string' && result.token) keepToken(result.token);
         if (!response.ok) throw new Error(result.error || '请求失败');
         return result;
     }
@@ -176,7 +186,7 @@
     function renderAll() { renderProfile(); renderLeaderboard(); renderFriends(); renderArena(); }
     async function refresh() {
         try {
-            const result = await api('me');
+            const result = await api('me', {});
             user = result.user;
             friends = result.friends;
             scores = result.scores;
@@ -186,6 +196,7 @@
             if (Object.keys(pendingRuns).length) void flushPendingRuns();
         } catch (error) {
             if (String(error.message).includes('登录')) {
+                keepToken('');
                 user = null; friends = []; scores = []; matches = [];
                 renderAll();
             } else if (!hub.hidden) say(error.message);
@@ -294,6 +305,7 @@
     });
     byId('socialLogout').addEventListener('click', async () => {
         if (!await act('logout')) return;
+        keepToken('');
         user = null; friends = []; scores = []; matches = [];
         renderAll(); say('已退出登录');
     });
@@ -304,8 +316,7 @@
         if (q.length < 2 || !user) return;
         searchTimer = setTimeout(async () => {
             try {
-                const response = await fetch(`/api?${new URLSearchParams({ op: 'search', q })}`, { credentials: 'same-origin' });
-                const result = await response.json();
+                const result = await api('search', undefined, undefined, { q });
                 list.replaceChildren();
                 for (const found of result.users || []) list.append(row(found.username, '添加', () => void act('friend', { userId: found.id })));
                 if (!list.childElementCount) list.append(make('p', '没有匹配的玩家。', 'social-muted'));
